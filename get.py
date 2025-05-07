@@ -928,9 +928,6 @@ def ListLicenses(licensesData: dict[str, object], targetLicenseKeys: list[str]) 
         title: str = data.get("title", "N/A")
         console.print(f"  [cyan]{spdx:<25}[/cyan] : {title}")
 
-    # Print footer
-    console.print("[dim]" + ("-" * 50) + "[/dim]")
-
 
 def PrintDetailedList(
     licensesData: dict[str, object], targetLicenseKeys: list[str]
