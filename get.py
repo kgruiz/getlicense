@@ -12,22 +12,53 @@ from pathlib import Path
 import requests
 import yaml  # Requires PyYAML
 
-# Rich for progress bar
+# Rich for progress bar and console output
 try:
-    from rich.progress import MofNCompleteColumn  # Changed import
+    from rich.console import Console
     from rich.progress import (
         BarColumn,
+        MofNCompleteColumn,
         Progress,
         SpinnerColumn,
         TextColumn,
         TimeElapsedColumn,
     )
+    from rich.text import Text
 except ImportError:
+    # Fallback print if rich is not installed
     print(
         "Error: 'rich' library not found. Please install it: pip install rich",
         file=sys.stderr,
     )
-    sys.exit(1)
+
+    # Define a dummy Console and Progress for basic functionality
+    class DummyConsole:
+        def print(self, *args, **kwargs):
+            # Simple print, ignoring style etc.
+            print(*args)
+
+    class DummyProgress:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc_val, exc_tb):
+            pass
+
+        def add_task(self, description, total):
+            return 0  # Dummy task ID
+
+        def update(self, task_id, description):
+            pass
+
+        def advance(self, task_id):
+            pass
+
+    Console = DummyConsole
+    Progress = DummyProgress
+    Text = str  # Fallback Text to simple string
 
 # --- Constants ---
 GITHUB_API_URL: str = "https://api.github.com"
@@ -52,7 +83,9 @@ PLACEHOLDER_TO_ARG_MAP: dict[str, str] = {
     "name of copyright owner": "--fullname",  # Handle Apache's format, maps to fullname
 }
 
-# --- Verbose Print Helper ---
+# --- Global Variables ---
+# Instantiate Console for rich output
+console = Console()
 # Global flag to store verbose state, set in main()
 _VERBOSE = False
 
@@ -70,9 +103,8 @@ def VerbosePrint(*args, **kwargs):
     **kwargs : dict
         Keyword arguments to pass to the print function.
     """
-
-    # Print if verbose flag is True
     if _VERBOSE:
+        # Use standard print to stderr for verbose messages
         print(*args, file=sys.stderr, **kwargs)
 
 
@@ -95,50 +127,37 @@ def GetGithubApi(endpoint: str) -> dict | list | None:
     """
     headers: dict[str, str] = {"Accept": "application/vnd.github.v3+json"}
     githubToken = os.environ.get("GITHUB_TOKEN")
-
-    # Add authorization header if token exists
     if githubToken:
         headers["Authorization"] = f"token {githubToken}"
 
     url: str = f"{GITHUB_API_URL}{endpoint}"
-
     try:
-        response = requests.get(url, headers=headers, timeout=15)  # Add timeout
-        response.raise_for_status()  # Raise HTTPError for bad responses (4xx or 5xx)
-
-        # Return JSON response
+        response = requests.get(url, headers=headers, timeout=15)
+        response.raise_for_status()
         return response.json()
-
     except requests.exceptions.Timeout:
-        # Essential Error
-        print(f"Error: Timeout while fetching from GitHub API ({url})", file=sys.stderr)
-
-        # Return None on error
+        console.print(
+            f"[bold red]Error:[/bold red] Timeout while fetching from GitHub API ({url})"
+        )
         return None
     except requests.exceptions.RequestException as e:
-        # Essential Error
-        print(f"Error fetching from GitHub API ({url}): {e}", file=sys.stderr)
-
-        # Print response details if available
+        console.print(
+            f"[bold red]Error:[/bold red] fetching from GitHub API ({url}): {e}"
+        )
         if hasattr(e, "response") and e.response is not None:
-            print(f"Response Status: {e.response.status_code}", file=sys.stderr)
-            print(f"Response Body: {e.response.text[:500]}...", file=sys.stderr)
-
-            # Handle specific 403 error for rate limiting
+            console.print(f"Response Status: {e.response.status_code}")
+            # Use rich Text to prevent accidental markup interpretation in response body
+            console.print(f"Response Body: {Text(e.response.text[:500])}...")
             if e.response.status_code == 403:
                 rateLimitInfo = e.response.headers.get("X-RateLimit-Remaining", "N/A")
-                print(
-                    f"Hint: Check GitHub API rate limits (Remaining: {rateLimitInfo}) or authentication (set GITHUB_TOKEN).",
-                    file=sys.stderr,
+                console.print(
+                    f"[yellow]Hint:[/yellow] Check GitHub API rate limits (Remaining: {rateLimitInfo}) or authentication (set GITHUB_TOKEN)."
                 )
-
-        # Return None on error
         return None
     except Exception as e:
-        # Essential Error
-        print(f"An unexpected error occurred during API call: {e}", file=sys.stderr)
-
-        # Return None on error
+        console.print(
+            f"[bold red]An unexpected error occurred during API call:[/bold red] {e}"
+        )
         return None
 
 
@@ -156,23 +175,12 @@ def FetchGithubDirListing(repoPath: str) -> list[dict[str, object]] | None:
     list[dict[str, object]] | None
         A list of file/directory dictionaries from the API, or None on error.
     """
-    # Keep verbose print for the start of the operation
     VerbosePrint(f"Fetching current file list from GitHub ({repoPath})...")
     endpoint: str = f"/repos/{OWNER}/{REPO}/contents/{repoPath}?ref={BRANCH}"
     data = GetGithubApi(endpoint)
-
-    # Check if data is valid list
     if not data or not isinstance(data, list):
-        # Essential Error (unless cache exists later)
-        print(
-            f"Error: Could not fetch or parse directory listing for {repoPath}",
-            file=sys.stderr,
-        )
-
-        # Return None on error
+        # Error printed by GetGithubApi
         return None
-
-    # Return valid list data
     return data
 
 
@@ -191,32 +199,23 @@ def FetchFileContent(downloadUrl: str) -> str | None:
         The text content of the file, or None on error.
     """
     try:
-        response = requests.get(downloadUrl, timeout=10)  # Add timeout
-        response.raise_for_status()  # Raise HTTPError for bad responses
-
-        # Return text content
+        response = requests.get(downloadUrl, timeout=10)
+        response.raise_for_status()
         return response.text
-
     except requests.exceptions.Timeout:
-        # Essential Error for the specific file fetch
-        print(f"\nError: Timeout fetching content from {downloadUrl}", file=sys.stderr)
-
-        # Return None on error
+        console.print(
+            f"\n[bold red]Error:[/bold red] Timeout fetching content from {downloadUrl}"
+        )
         return None
     except requests.exceptions.RequestException as e:
-        # Essential Error for the specific file fetch
-        print(f"\nError fetching content from {downloadUrl}: {e}", file=sys.stderr)
-
-        # Return None on error
+        console.print(
+            f"\n[bold red]Error:[/bold red] fetching content from {downloadUrl}: {e}"
+        )
         return None
     except Exception as e:
-        # Essential Error for the specific file fetch
-        print(
-            f"\nAn unexpected error occurred fetching content from {downloadUrl}: {e}",
-            file=sys.stderr,
+        console.print(
+            f"\n[bold red]An unexpected error occurred fetching content from {downloadUrl}:[/bold red] {e}"
         )
-
-        # Return None on error
         return None
 
 
@@ -244,75 +243,53 @@ def ParseLicenseFile(filename: str, fileContent: str) -> dict[str, object] | Non
     frontMatter: dict[str, object] = {}
     body: str = fileContent.strip()
 
-    # Check for YAML front matter delimiters
     if fileContent.strip().startswith("---"):
         parts = fileContent.split("---", 2)
-
-        # Ensure correct structure (empty string, front matter, body)
         if len(parts) >= 3:
             frontMatterRaw: str = parts[1].strip()
             body = parts[2].strip()
-
             try:
-                # Load YAML, allow empty results, default to empty dict
                 frontMatter = yaml.safe_load(frontMatterRaw) or {}
-
-                # Validate parsed front matter is a dictionary
                 if not isinstance(frontMatter, dict):
                     VerbosePrint(
                         f"Warning: Front matter in {filename} not a dictionary. Fallback."
                     )
                     frontMatter = {}
-
-                # Get SPDX ID from parsed data first
                 spdxId = frontMatter.get("spdx-id")
-
             except yaml.YAMLError as e:
                 VerbosePrint(
                     f"Warning: YAML parse error for {filename}: {e}. Fallback."
                 )
                 frontMatter = {}
-
-                # Fallback regex search if YAML fails
                 matchSpdx = re.search(
                     r"spdx-id:\s*([^\n]+)", frontMatterRaw, re.IGNORECASE
                 )
                 if matchSpdx:
                     spdxId = matchSpdx.group(1).strip()
-
         else:
             VerbosePrint(f"Warning: Malformed front matter in {filename}.")
-            # Fallback: Guess SPDX ID from filename if not found yet
             if not spdxId:
                 spdxId = GuessSpdxFromFilename(filename)
     else:
         VerbosePrint(f"Warning: No front matter '---' in {filename}.")
         spdxId = GuessSpdxFromFilename(filename)
 
-    # Final check and fallback for SPDX ID from parsed front matter
     if not spdxId and "spdx-id" in frontMatter:
         spdxId = frontMatter["spdx-id"]
-
-    # If SPDX ID is still missing, cannot proceed
     if not spdxId:
-        print(
-            f"Error: Could not determine SPDX ID for {filename}. Skipping.",
-            file=sys.stderr,
+        console.print(
+            f"[bold red]Error:[/bold red] Could not determine SPDX ID for {filename}. Skipping."
         )
-
-        # Return None if SPDX ID missing
         return None
 
-    # Ensure basic fields exist in frontMatter for consistency in cache structure
     frontMatter.setdefault("spdx-id", spdxId)
-    frontMatter.setdefault("title", spdxId)  # Fallback title
+    frontMatter.setdefault("title", spdxId)
     frontMatter.setdefault("nickname", None)
     frontMatter.setdefault("description", None)
     frontMatter.setdefault("permissions", [])
     frontMatter.setdefault("conditions", [])
     frontMatter.setdefault("limitations", [])
 
-    # Return parsed data
     return {"spdx_id": spdxId, "front_matter": frontMatter, "body": body}
 
 
@@ -331,18 +308,12 @@ def GuessSpdxFromFilename(filename: str) -> str | None:
         The guessed SPDX ID, or None if the format seems invalid.
     """
     spdxIdGuess: str = os.path.splitext(filename)[0]
-
-    # Basic check, SPDX allows letters, numbers, ., -, +
     if re.match(r"^[A-Za-z0-9.\-\+]+$", spdxIdGuess):
-
-        # Return the guess
         return spdxIdGuess
     else:
         VerbosePrint(
             f"Warning: Filename {filename} doesn't look like a typical SPDX ID format. Cannot reliably guess."
         )
-
-        # Return None if format invalid
         return None
 
 
@@ -364,23 +335,16 @@ def ParseDataFile(filename: str, fileContent: str) -> object | None:
     """
     try:
         data = yaml.safe_load(fileContent)
-
-        # Return parsed data
         return data
     except yaml.YAMLError as e:
-        # Essential Error for this file
-        print(f"Error parsing YAML data file {filename}: {e}", file=sys.stderr)
-
-        # Return None on error
+        console.print(
+            f"[bold red]Error:[/bold red] parsing YAML data file {filename}: {e}"
+        )
         return None
     except Exception as e:
-        # Essential Error for this file
-        print(
-            f"An unexpected error occurred parsing data file {filename}: {e}",
-            file=sys.stderr,
+        console.print(
+            f"[bold red]An unexpected error occurred parsing data file {filename}:[/bold red] {e}"
         )
-
-        # Return None on error
         return None
 
 
@@ -401,38 +365,24 @@ def LoadCache(cacheFilePath: Path) -> dict[str, object]:
     dict[str, object]
         The loaded cache data, or an empty dictionary if loading fails or file is empty.
     """
-
-    # Check if cache file exists
     if cacheFilePath.exists():
-
         try:
             with open(cacheFilePath, "r", encoding="utf-8") as f:
                 content = f.read()
-
-                # Return empty dict if file is empty
                 if not content:
                     VerbosePrint(
                         f"Warning: Cache file {cacheFilePath} is empty. Starting fresh."
                     )
                     return {}
-
-                # Return parsed JSON data
                 return json.loads(content)
-
         except (IOError, json.JSONDecodeError) as e:
             VerbosePrint(
                 f"Warning: Could not load or parse cache file {cacheFilePath}: {e}. Starting fresh."
             )
-
-            # Return empty dict on error
             return {}
         except Exception as e:
             VerbosePrint(f"An unexpected error occurred loading cache: {e}")
-
-            # Return empty dict on error
             return {}
-
-    # Return empty dict if file doesn't exist
     return {}
 
 
@@ -448,20 +398,18 @@ def SaveCache(cacheFilePath: Path, cacheData: dict[str, object]) -> None:
         The cache data dictionary to save.
     """
     try:
-        # Ensure parent directory exists
         cacheFilePath.parent.mkdir(parents=True, exist_ok=True)
-
-        # Write JSON data to file
         with open(cacheFilePath, "w", encoding="utf-8") as f:
             json.dump(cacheData, f, indent=2, sort_keys=True)
         VerbosePrint(f"Cache saved to {cacheFilePath}")
-
     except IOError as e:
-        # Essential Error
-        print(f"Error: Could not save cache file {cacheFilePath}: {e}", file=sys.stderr)
+        console.print(
+            f"[bold red]Error:[/bold red] Could not save cache file {cacheFilePath}: {e}"
+        )
     except Exception as e:
-        # Essential Error
-        print(f"An unexpected error occurred saving cache: {e}", file=sys.stderr)
+        console.print(
+            f"[bold red]An unexpected error occurred saving cache:[/bold red] {e}"
+        )
 
 
 def UpdateAndLoadLicenseCache(
@@ -505,15 +453,11 @@ def UpdateAndLoadLicenseCache(
     ]
 
     # --- Check Data Files ---
-    # FetchGithubDirListing prints verbose message inside
     githubDataFiles = FetchGithubDirListing(DATA_PATH)
-
-    # Handle failure to fetch directory listing
     if githubDataFiles is None:
         VerbosePrint(
             "Warning: Failed to fetch data file list. Using potentially stale cached data."
         )
-        # Extract existing data files from cache if possible
         for key, val in cachedData.items():
             if key.startswith("data:"):
                 processedDataFiles[key] = val
@@ -525,14 +469,10 @@ def UpdateAndLoadLicenseCache(
             and item.get("type") == "file"
             and item.get("name").endswith(".yml")
         }
-
-        # Compare with cache to find changes
         for name, ghInfo in currentGithubDataFiles.items():
             cacheKey = f"data:{name}"
             cachedEntry = cachedData.get(cacheKey)
             gh_sha = ghInfo.get("sha")
-
-            # Mark for fetch if SHA missing or different from cache
             if not gh_sha or not (
                 cachedEntry
                 and isinstance(cachedEntry, dict)
@@ -547,10 +487,8 @@ def UpdateAndLoadLicenseCache(
                 else:
                     VerbosePrint(f"  Detected new data file {name}.")
             else:
-                # Keep valid cached entry
                 processedDataFiles[cacheKey] = cachedEntry
 
-        # Identify deleted data files
         cachedDataFilenames = {
             k.split(":", 1)[1] for k in cachedData.keys() if k.startswith("data:")
         }
@@ -562,16 +500,12 @@ def UpdateAndLoadLicenseCache(
             needsSave = True
 
     # --- Check License Files ---
-    # FetchGithubDirListing prints verbose message inside
     githubLicenseFiles = FetchGithubDirListing(LICENSES_PATH)
     processedLicenses = {}
-
-    # Handle failure to fetch directory listing
     if githubLicenseFiles is None:
         VerbosePrint(
             "Warning: Failed to fetch license file list. Using potentially stale cached licenses."
         )
-        # Keep existing cached licenses if list fetch failed
         for key, val in cachedData.items():
             if not key.startswith("data:"):
                 processedLicenses[key] = val
@@ -579,16 +513,11 @@ def UpdateAndLoadLicenseCache(
         currentGithubLicenseFiles = {
             item["name"]: item for item in githubLicenseFiles if isinstance(item, dict)
         }
-
-        # Compare with cache to find changes
         for name, ghInfo in currentGithubLicenseFiles.items():
-            # Skip non-txt files
             if not name.endswith(".txt"):
                 continue
-
             cachedEntry = None
             cachedSpdxLower = None
-            # Find corresponding cached entry by filename
             for key, val in cachedData.items():
                 if (
                     not key.startswith("data:")
@@ -598,10 +527,7 @@ def UpdateAndLoadLicenseCache(
                     cachedEntry = val
                     cachedSpdxLower = key
                     break
-
             gh_sha = ghInfo.get("sha")
-
-            # Mark for fetch if SHA missing or different from cache
             if not gh_sha or not (cachedEntry and cachedEntry.get("sha") == gh_sha):
                 licenseFilesToFetch.append(ghInfo)
                 needsSave = True
@@ -612,16 +538,14 @@ def UpdateAndLoadLicenseCache(
                 else:
                     VerbosePrint(f"  Detected new file {name}.")
             else:
-                # Check if SPDX ID in cache matches the key, correct if needed
                 spdxIdInCache = cachedEntry.get("spdx_id")
                 if spdxIdInCache and spdxIdInCache.lower() != cachedSpdxLower:
                     VerbosePrint(f"  SPDX ID mismatch for cached {name}. Updating key.")
                     processedLicenses[spdxIdInCache.lower()] = cachedEntry
-                    needsSave = True  # Need to save cache with corrected key
+                    needsSave = True
                 else:
-                    processedLicenses[cachedSpdxLower] = cachedEntry  # Keep valid entry
+                    processedLicenses[cachedSpdxLower] = cachedEntry
 
-        # Identify deleted license files
         cachedLicenseFilenames = {
             entry.get("filename")
             for key, entry in cachedData.items()
@@ -641,12 +565,11 @@ def UpdateAndLoadLicenseCache(
     # --- Fetch content for new/changed files using Progress Bar ---
     totalFilesToFetch = len(dataFilesToFetch) + len(licenseFilesToFetch)
 
-    # Display progress bar only if there are files to fetch
     if totalFilesToFetch > 0:
-        print()  # Add newline before progress bar
+        console.print()  # Add newline before progress bar
         with Progress(
-            *progressColumns, transient=False
-        ) as progress:  # Make bar persistent
+            *progressColumns, console=console, transient=False
+        ) as progress:  # Use main console, make bar persistent
             fetchTask = progress.add_task(
                 "[cyan]Syncing cache...", total=totalFilesToFetch
             )
@@ -658,18 +581,14 @@ def UpdateAndLoadLicenseCache(
                     fetchTask, description=f"[cyan]Fetching data: {filename}"
                 )
                 content = FetchFileContent(ghInfo.get("download_url"))
-
-                # Process fetched content
                 if content:
                     parsedData = ParseDataFile(filename, content)
                     if parsedData is not None:
-                        # Store parsed data and SHA in processed dict
                         processedDataFiles[f"data:{filename}"] = {
                             "sha": ghInfo.get("sha", ""),
                             "content": parsedData,
                         }
                     elif f"data:{filename}" in cachedData:
-                        # If parsing failed but it was cached, keep old version
                         VerbosePrint(
                             f"  Failed to parse {filename}, keeping old cached version."
                         )
@@ -678,8 +597,6 @@ def UpdateAndLoadLicenseCache(
                         ]
                 else:
                     VerbosePrint(f"  Failed to fetch data file {filename}.")
-
-                # Advance progress after processing each file
                 progress.advance(fetchTask)
 
             # Fetch license files
@@ -689,14 +606,11 @@ def UpdateAndLoadLicenseCache(
                     fetchTask, description=f"[cyan]Fetching license: {filename}"
                 )
                 content = FetchFileContent(ghInfo.get("download_url"))
-
-                # Process fetched content
                 if content:
                     parsedData = ParseLicenseFile(filename, content)
                     if parsedData:
                         spdxLower = parsedData["spdx_id"].lower()
                         fm = parsedData["front_matter"]
-                        # Store all required fields + full content in processed dict
                         processedLicenses[spdxLower] = {
                             "spdx_id": parsedData["spdx_id"],
                             "title": fm.get("title", parsedData["spdx_id"]),
@@ -707,14 +621,13 @@ def UpdateAndLoadLicenseCache(
                             "permissions": fm.get("permissions", []),
                             "conditions": fm.get("conditions", []),
                             "limitations": fm.get("limitations", []),
-                            "file_content_cached": content,  # Cache the full file content
+                            "file_content_cached": content,
                         }
                     elif filename in {
                         v.get("filename")
                         for k, v in cachedData.items()
                         if not k.startswith("data:")
                     }:
-                        # If parsing failed but it was cached, keep old version
                         VerbosePrint(
                             f"  Failed to parse {filename}, keeping old cached version."
                         )
@@ -728,10 +641,8 @@ def UpdateAndLoadLicenseCache(
                                 break
                 else:
                     VerbosePrint(f"  Failed to fetch content for {filename}.")
-
-                # Advance progress after processing each file
                 progress.advance(fetchTask)
-        print()  # Add newline after progress bar
+        console.print()  # Add newline after progress bar
 
     # Remove deleted licenses explicitly after processing fetched ones
     keysToRemoveFromProcessed = [
@@ -743,16 +654,13 @@ def UpdateAndLoadLicenseCache(
     for key in keysToRemoveFromProcessed:
         processedLicenses.pop(key, None)
 
-    # Combine updated data file cache with updated license cache
-    finalCacheData = {**processedDataFiles, **processedLicenses}
+    finalCacheData = {**processedDataFiles, **processedLicenses}  # Combine
 
-    # Save cache if changes were detected or forced
     if needsSave or deletedDataFilenames or deletedLicenseFilenames or forceRefresh:
         SaveCache(cacheFilePath, finalCacheData)  # SaveCache prints verbose message
     else:
         VerbosePrint("Cache is up-to-date.")
 
-    # Return the combined, updated cache data
     return finalCacheData
 
 
@@ -775,8 +683,6 @@ def FindPlaceholders(templateBody: str) -> set[str]:
     """
     pattern: str = r"\[([^\]]+)\]"
     placeholders: list[str] = re.findall(pattern, templateBody)
-
-    # Return unique placeholders
     return set(placeholders)
 
 
@@ -798,68 +704,51 @@ def FillLicenseTemplate(templateBody: str, replacements: dict[str, str]) -> str:
         The license text with placeholders filled.
     """
     filledText: str = templateBody
-
-    # Iterate through replacements and substitute
     for placeholder, value in replacements.items():
-        # Ensure placeholder format consistency (e.g., always '[placeholder]')
         phFormatted: str = f"[{placeholder.strip('[]')}]"
-        filledText = filledText.replace(phFormatted, str(value))  # Use str() for safety
-
-    # Return text with substitutions made
+        filledText = filledText.replace(phFormatted, str(value))
     return filledText
 
 
 def ListLicenses(licensesData: dict[str, object]) -> None:
     """
-    Prints a simple list of available licenses from cached data.
+    Prints a simple list of available licenses from cached data using rich.
 
     Parameters
     ----------
     licensesData : dict[str, object]
         The dictionary containing cached license and data file information.
     """
-    # Filter out non-license entries (data files)
     licenseKeys = [k for k in licensesData.keys() if not k.startswith("data:")]
-
-    # Check if any licenses were found
     if not licenseKeys:
-        print("No licenses found in cache.")  # Essential info
+        console.print("[yellow]No licenses found in cache.[/yellow]")
         return
 
-    # Print header
-    print("\nAvailable Licenses (SPDX ID: Title):")  # Essential output
-    print("-" * 50)
-
-    # Sort and print license info
+    console.print("\n[bold]Available Licenses (SPDX ID: Title):[/bold]")
+    console.print("-" * 50)
     sortedKeys: list[str] = sorted(licenseKeys)
     for spdxLower in sortedKeys:
         data = licensesData[spdxLower]
         spdx: str = data.get("spdx_id", "N/A")
         title: str = data.get("title", "N/A")
-        print(f"  {spdx:<25} : {title}")  # Essential output
-
-    # Print footer
-    print("-" * 50)
+        console.print(f"  [cyan]{spdx:<25}[/cyan] : {title}")
+    console.print("-" * 50)
 
 
 def PrintDetailedList(licensesData: dict[str, object]) -> None:
     """
-    Prints a detailed list of licenses using cached basic info and rule labels.
+    Prints a detailed list of licenses using cached basic info and rule labels with rich formatting.
 
     Parameters
     ----------
     licensesData : dict[str, object]
         The dictionary containing cached license and data file information.
     """
-    # Filter out non-license entries
     licenseKeys = [k for k in licensesData.keys() if not k.startswith("data:")]
-
-    # Check if any licenses were found
     if not licenseKeys:
-        print("No licenses found in cache.")  # Essential info
+        console.print("[yellow]No licenses found in cache.[/yellow]")
         return
 
-    # Load rules data from cache, handle missing case
     rulesData = licensesData.get("data:rules.yml", {}).get("content", {})
     rulesMap = {}
     if not rulesData:
@@ -868,72 +757,60 @@ def PrintDetailedList(licensesData: dict[str, object]) -> None:
         )
     else:
         for category in ["permissions", "conditions", "limitations"]:
-            # Create a map of tag -> rule dict for efficient lookup
             rulesMap[category] = {
                 rule.get("tag"): rule
                 for rule in rulesData.get(category, [])
                 if isinstance(rule, dict) and rule.get("tag")
             }
 
-    # Print header
-    print("\n--- Detailed License List (from cache) ---")  # Essential output
-
-    # Sort and iterate through licenses
+    console.print("\n[bold]--- Detailed License List (from cache) ---[/bold]")
     sortedKeys: list[str] = sorted(licenseKeys)
     for i, spdxLower in enumerate(sortedKeys):
         data = licensesData[spdxLower]
         spdx: str = data.get("spdx_id", "N/A")
         title: str = data.get("title", "N/A")
-        nickname: str | None = data.get("nickname")  # Use .get for optional fields
+        nickname: str | None = data.get("nickname")
         description: str = data.get("description", "No description available.")
         perms_tags = data.get("permissions", [])
         conds_tags = data.get("conditions", [])
         lims_tags = data.get("limitations", [])
 
-        # Print core license info
-        print(f"\nSPDX ID: {spdx}")  # Essential output
-        print(f"Title: {title}")  # Essential output
+        console.print(f"\n[bold cyan]SPDX ID:[/bold cyan] {spdx}")
+        console.print(f"[bold]Title:[/bold] {title}")
         if nickname:
-            print(f"Nickname: {nickname}")  # Essential output
+            console.print(f"[italic]Nickname:[/italic] {nickname}")
 
-        # Print truncated description
         truncated_desc = textwrap.shorten(
             description or "", width=100, placeholder="..."
         )
-        print(f"Description: {truncated_desc}")  # Essential output
+        console.print(f"[bold]Description:[/bold] {truncated_desc}")
 
-        # Helper function to get rule labels
         def GetRuleLabels(tags: list[str], category: str) -> list[str]:
             labels = []
             catRulesMap = rulesMap.get(category, {})
             for tag in tags:
                 ruleInfo = catRulesMap.get(tag)
-                labels.append(
-                    ruleInfo.get("label", tag) if ruleInfo else tag
-                )  # Use tag as fallback
-            return sorted(labels)  # Sort labels alphabetically
+                labels.append(ruleInfo.get("label", tag) if ruleInfo else tag)
+            return sorted(labels)
 
-        # Get and print rule labels
         perm_labels = GetRuleLabels(perms_tags, "permissions")
         cond_labels = GetRuleLabels(conds_tags, "conditions")
         lim_labels = GetRuleLabels(lims_tags, "limitations")
 
-        print(
-            f"Permissions ({len(perm_labels)}): {', '.join(perm_labels) if perm_labels else 'None'}"
-        )  # Essential output
-        print(
-            f"Conditions ({len(cond_labels)}): {', '.join(cond_labels) if cond_labels else 'None'}"
-        )  # Essential output
-        print(
-            f"Limitations ({len(lim_labels)}): {', '.join(lim_labels) if lim_labels else 'None'}"
-        )  # Essential output
+        console.print(
+            f"[bold green]Permissions[/bold green] ([blue]{len(perm_labels)}[/blue]): {', '.join(perm_labels) if perm_labels else '[dim]None[/dim]'}"
+        )
+        console.print(
+            f"[bold yellow]Conditions[/bold yellow] ([blue]{len(cond_labels)}[/blue]): {', '.join(cond_labels) if cond_labels else '[dim]None[/dim]'}"
+        )
+        console.print(
+            f"[bold red]Limitations[/bold red] ([blue]{len(lim_labels)}[/blue]): {', '.join(lim_labels) if lim_labels else '[dim]None[/dim]'}"
+        )
 
-        # Print separator between entries
         if i < len(sortedKeys) - 1:
-            print("---")
+            console.print("[dim]---[/dim]")
 
-    # Print final footer
-    print("\n--- End Detailed License List ---")  # Essential output
+    console.print("\n[bold]--- End Detailed License List ---[/bold]")
 
 
 def GetFullLicenseData(
@@ -957,17 +834,14 @@ def GetFullLicenseData(
     """
     basicInfo = licensesData.get(spdxIdLower)
     if not basicInfo:
-        # Essential Error
-        print(
-            f"Error: Basic info for {spdxIdLower.upper()} not found in cache.",
-            file=sys.stderr,
+        console.print(
+            f"[bold red]Error:[/bold red] Basic info for {spdxIdLower.upper()} not found in cache."
         )
         return None
 
     content = basicInfo.get("file_content_cached")
     fullLicenseData = None
 
-    # Try parsing cached content first
     if content:
         VerbosePrint(
             f"Using cached content for {basicInfo.get('filename', spdxIdLower.upper())}."
@@ -981,21 +855,15 @@ def GetFullLicenseData(
             )
             content = None  # Force re-fetch
 
-    # Fetch if content wasn't cached or failed to parse
-    if not content:
+    if not content:  # Need to fetch
         filename = basicInfo.get("filename")
         if not filename:
-            # Essential Error
-            print(
-                f"Error: Filename missing for {spdxIdLower.upper()} in cache. Cannot fetch full info.",
-                file=sys.stderr,
+            console.print(
+                f"[bold red]Error:[/bold red] Filename missing for {spdxIdLower.upper()} in cache. Cannot fetch full info."
             )
             return None
 
         VerbosePrint(f"Fetching full content for {filename} from GitHub...")
-
-        # Fetch the directory listing to find the download URL.
-        # Optimization TODO: Store download_url in the cache.
         githubFiles = FetchGithubDirListing(LICENSES_PATH)
         downloadUrl = None
         if githubFiles:
@@ -1004,38 +872,31 @@ def GetFullLicenseData(
                     downloadUrl = item.get("download_url")
                     break
         if not downloadUrl:
-            # Essential Error
-            print(
-                f"Error: Could not find download URL for {filename}. Cannot fetch content.",
-                file=sys.stderr,
+            console.print(
+                f"[bold red]Error:[/bold red] Could not find download URL for {filename}. Cannot fetch content."
             )
             return None
 
-        # Fetch the actual content
         content = FetchFileContent(downloadUrl)
         if content:
             fullLicenseData = ParseLicenseFile(filename, content)
-            # Note: We don't update the cache here automatically, rely on --refresh
         else:
             # FetchFileContent prints essential error
             return None
 
-    # Final check if we got the data
     if not fullLicenseData:
-        # Error message already printed by ParseLicenseFile if it failed
-        print(
-            f"Error: Failed to get full license data for {spdxIdLower.upper()}.",
-            file=sys.stderr,
+        # ParseLicenseFile might print essential error
+        console.print(
+            f"[bold red]Error:[/bold red] Failed to get full license data for {spdxIdLower.upper()}."
         )
         return None
 
-    # Return the full parsed data
     return fullLicenseData
 
 
 def DisplayLicenseInfo(spdxIdLower: str, licensesData: dict[str, object]) -> None:
     """
-    Prints the formatted metadata for a license using GetFullLicenseData.
+    Prints the formatted metadata for a license using GetFullLicenseData and rich.
 
     Parameters
     ----------
@@ -1046,7 +907,6 @@ def DisplayLicenseInfo(spdxIdLower: str, licensesData: dict[str, object]) -> Non
     """
     fullLicenseData = GetFullLicenseData(spdxIdLower, licensesData)
     if not fullLicenseData:
-        # Error message already printed by GetFullLicenseData
         return
 
     fm: dict[str, object] = fullLicenseData.get("front_matter", {})
@@ -1054,107 +914,98 @@ def DisplayLicenseInfo(spdxIdLower: str, licensesData: dict[str, object]) -> Non
     title: str = fm.get("title", "N/A")
     body = fullLicenseData.get("body", "")
 
-    # Load rules and fields data from cache
     rulesData = licensesData.get("data:rules.yml", {}).get("content", {})
     fieldsDataList = licensesData.get("data:fields.yml", {}).get("content", [])
-    # Create lookup map for fields, using lowercase name as key
     fieldsData = {
         item["name"].lower(): item
         for item in fieldsDataList
         if isinstance(item, dict) and item.get("name")
     }
 
-    # Print information header
-    print(f"\n--- License Information: {title} ({spdxId}) ---")  # Essential Output
+    console.print(f"\n[bold]--- License Information: {title} ({spdxId}) ---[/bold]")
 
-    # Print optional nickname
     if fm.get("nickname"):
-        print(f"\nNickname: {fm['nickname']}")  # Essential Output
+        console.print(f"\n[italic]Nickname:[/italic] {fm['nickname']}")
 
-    # Helper function for printing text blocks
     def PrintTextBlock(label: str, text: str | None) -> None:
         if text:
-            print(f"\n{label}:")  # Essential Output
-            print(
-                textwrap.fill(
-                    text, width=78, initial_indent="  ", subsequent_indent="  "
+            console.print(f"\n[bold]{label}:[/bold]")
+            # Use Text object to prevent markup interpretation in the description itself
+            console.print(
+                Text(
+                    textwrap.fill(
+                        text, width=78, initial_indent="  ", subsequent_indent="  "
+                    )
                 )
-            )  # Essential Output
+            )
 
-    # Print standard text blocks
     PrintTextBlock("Description", fm.get("description"))
     PrintTextBlock("How to Apply", fm.get("how"))
 
-    # Helper function for printing rule lists with labels
-    def PrintRulesWithLabels(label: str, key: str, rulesConfig: dict) -> None:
+    def PrintRulesWithLabels(
+        label: str, key: str, rulesConfig: dict, color: str
+    ) -> None:
         ruleTags = fm.get(key, [])
         configRules = rulesConfig.get(key, [])
-        # Create lookup map for rules in this category
         configRulesMap = {
             rule.get("tag"): rule
             for rule in configRules
             if isinstance(rule, dict) and rule.get("tag")
         }
-
-        # Print rules if they exist
         if ruleTags and isinstance(ruleTags, list):
-            print(f"\n{label}:")  # Essential Output
-            sorted_tags = sorted(ruleTags)  # Sort tags for consistent order
+            console.print(f"\n[bold {color}]{label}:[/bold {color}]")
+            sorted_tags = sorted(ruleTags)
             for tag in sorted_tags:
                 ruleInfo = configRulesMap.get(tag)
-                # Print label and tag, or just tag if label not found
                 if ruleInfo and ruleInfo.get("label"):
-                    print(f"  - {ruleInfo['label']} ({tag})")  # Essential Output
+                    console.print(
+                        f"  - [bold {color}]{ruleInfo['label']}[/bold {color}] ([dim]{tag}[/dim])"
+                    )
                 else:
-                    print(
-                        f"  - {tag} (Label not found in rules.yml)"
-                    )  # Essential Output
+                    console.print(f"  - {tag} ([yellow]Label not found[/yellow])")
 
-    # Print rule lists
-    PrintRulesWithLabels("Permissions", "permissions", rulesData)
-    PrintRulesWithLabels("Conditions", "conditions", rulesData)
-    PrintRulesWithLabels("Limitations", "limitations", rulesData)
+    PrintRulesWithLabels("Permissions", "permissions", rulesData, "green")
+    PrintRulesWithLabels("Conditions", "conditions", rulesData, "yellow")
+    PrintRulesWithLabels("Limitations", "limitations", rulesData, "red")
 
-    # Print 'using' examples if available
     if fm.get("using") and isinstance(fm["using"], dict):
-        print("\nNotable Projects Using This License:")  # Essential Output
+        console.print("\n[bold]Notable Projects Using This License:[/bold]")
         for project, url in fm["using"].items():
-            print(f"  - {project}: {url}")  # Essential Output
+            console.print(f"  - {project}: {url}")
 
-    # Print optional note
     PrintTextBlock("Note", fm.get("note"))
 
-    # Find and display placeholders
     placeholders = FindPlaceholders(body)
     if placeholders:
-        print("\nPlaceholders in Body:")  # Essential Output
+        console.print("\n[bold]Placeholders in Body:[/bold]")
         for ph in sorted(list(placeholders)):
             ph_lower = ph.lower()
             fieldInfo = fieldsData.get(ph_lower)
             description = (
-                fieldInfo.get("description", "No description available")
+                fieldInfo.get("description", "[dim]No description available[/dim]")
                 if fieldInfo
-                else "No description available"
+                else "[dim]No description available[/dim]"
             )
             argSuggestion = PLACEHOLDER_TO_ARG_MAP.get(
-                ph_lower, f"(no direct argument for '[{ph}]')"
+                ph_lower, f"[dim](no direct argument for '[{ph}]')[/dim]"
             )
             defaultInfo = ""
             if ph_lower in ["year", "yyyy"]:
-                defaultInfo = " (defaults to current year)"
-            print(f"  - [{ph}]")  # Essential Output
-            print(f"    Description: {description}")  # Essential Output
-            print(f"    Argument: {argSuggestion}{defaultInfo}")  # Essential Output
+                defaultInfo = " [dim](defaults to current year)[/dim]"
+            console.print(f"  - [bold magenta][{ph}][/bold magenta]")
+            console.print(f"    [italic]Description:[/italic] {description}")
+            console.print(
+                f"    [italic]Argument:[/italic] {argSuggestion}{defaultInfo}"
+            )
     else:
-        print("\nPlaceholders in Body: (None detected)")  # Essential Output
+        console.print("\n[bold]Placeholders in Body:[/bold] ([dim]None detected[/dim])")
 
-    # Print footer
-    print("\n--- End License Information ---")  # Essential Output
+    console.print("\n[bold]--- End License Information ---[/bold]")
 
 
 def CompareLicenses(spdxIdsLower: list[str], licensesData: dict[str, object]) -> None:
     """
-    Compares licenses based on rules.
+    Compares licenses based on rules using rich formatting.
 
     Parameters
     ----------
@@ -1163,46 +1014,35 @@ def CompareLicenses(spdxIdsLower: list[str], licensesData: dict[str, object]) ->
     licensesData : dict[str, object]
         The dictionary containing cached license and data file information.
     """
-    # Check if enough licenses are provided
     if len(spdxIdsLower) < 2:
-        # Essential Error
-        print(
-            "\nError: Need at least two license SPDX IDs to compare.", file=sys.stderr
+        console.print(
+            "\n[bold red]Error:[/bold red] Need at least two license SPDX IDs to compare."
         )
         return
 
-    # Get full data for each license to compare
     licensesToCompare = []
     for spdxLower in spdxIdsLower:
         fullLicenseData = GetFullLicenseData(spdxLower, licensesData)
         if fullLicenseData:
             licensesToCompare.append(fullLicenseData)
         else:
-            # GetFullLicenseData prints essential error
             VerbosePrint(
                 f"Could not get data for {spdxLower.upper()}, skipping comparison."
             )
 
-    # Check if we have enough valid licenses for comparison
     if len(licensesToCompare) < 2:
-        # Essential Error
-        print(
-            "\nCannot perform comparison: Need at least two valid licenses.",
-            file=sys.stderr,
+        console.print(
+            "\n[bold red]Error:[/bold red] Cannot perform comparison: Need at least two valid licenses."
         )
         return
 
-    # Load rules data from cache
     rulesData = licensesData.get("data:rules.yml", {}).get("content", {})
     if not rulesData:
-        # Essential Error
-        print(
-            "Error: rules.yml data not found in cache. Cannot compare rules.",
-            file=sys.stderr,
+        console.print(
+            "[bold red]Error:[/bold red] rules.yml data not found in cache. Cannot compare rules."
         )
         return
 
-    # Create lookup map for rules
     rulesMap = {}
     for category in ["permissions", "conditions", "limitations"]:
         rulesMap[category] = {
@@ -1211,20 +1051,16 @@ def CompareLicenses(spdxIdsLower: list[str], licensesData: dict[str, object]) ->
             if isinstance(rule, dict) and rule.get("tag")
         }
 
-    # Print comparison header
-    print("\n--- Comparing Licenses ---")  # Essential Output
+    console.print("\n[bold]--- Comparing Licenses ---[/bold]")
     licenseSpdxIds = [lic["spdx_id"] for lic in licensesToCompare]
-    print("Comparing:", ", ".join(licenseSpdxIds))  # Essential Output
+    console.print(f"[bold]Comparing:[/bold] {', '.join(licenseSpdxIds)}")
 
-    # Collect all unique rule tags across all licenses being compared
     allRuleTags = set()
     for lic in licensesToCompare:
         fm = lic.get("front_matter", {})
         for cat in ["permissions", "conditions", "limitations"]:
-            # Use .get() with default empty list
             allRuleTags.update(fm.get(cat, []))
 
-    # Separate tags by category using rulesMap
     tagsByCategory = {
         "permissions": sorted(
             [tag for tag in allRuleTags if tag in rulesMap.get("permissions", {})]
@@ -1237,49 +1073,50 @@ def CompareLicenses(spdxIdsLower: list[str], licensesData: dict[str, object]) ->
         ),
     }
 
-    # Determine max label width for alignment
     maxLabelWidth = 0
     for category_tags in tagsByCategory.values():
         for tag in category_tags:
             ruleInfo = None
-            # Check all categories for the tag to find its info
             for cat in rulesMap:
                 if tag in rulesMap[cat]:
                     ruleInfo = rulesMap[cat][tag]
                     break
             if ruleInfo and ruleInfo.get("label"):
                 maxLabelWidth = max(maxLabelWidth, len(ruleInfo["label"]))
-        # Ensure minimum width for better spacing
         maxLabelWidth = max(maxLabelWidth, 25)
 
-    # Print comparison by rule category
+    categoryColors = {
+        "permissions": "green",
+        "conditions": "yellow",
+        "limitations": "red",
+    }
+
     for category in ["permissions", "conditions", "limitations"]:
         ruleTags = tagsByCategory[category]
-        # Skip category if no relevant rules found for comparison
         if not ruleTags:
             continue
 
-        print(f"\n{category.capitalize()}:")  # Essential Output
+        color = categoryColors.get(category, "white")
+        console.print(f"\n[bold {color}]{category.capitalize()}:[/bold {color}]")
         for tag in ruleTags:
-            # Find rule info (label) from rulesMap
             ruleInfo = rulesMap.get(category, {}).get(tag)
-            label = (
-                ruleInfo.get("label", tag) if ruleInfo else tag
-            )  # Use tag as fallback label
+            label = ruleInfo.get("label", tag) if ruleInfo else tag
 
-            # Format the line with label and indicators
             line = f"  {label:<{maxLabelWidth}} : "
             indicators = []
             for lic in licensesToCompare:
                 fm = lic.get("front_matter", {})
-                # Check if the license has this rule tag in the correct category
                 hasRule = tag in fm.get(category, [])
-                indicators.append(f"{lic['spdx_id']}: {'✓' if hasRule else 'X'}")
+                indicator_symbol = (
+                    "[bold green]✓[/bold green]"
+                    if hasRule
+                    else "[bold red]X[/bold red]"
+                )
+                indicators.append(f"[dim]{lic['spdx_id']}:[/dim] {indicator_symbol}")
             line += " | ".join(indicators)
-            print(line)  # Essential Output
+            console.print(line)
 
-    # Print comparison footer
-    print("\n--- End Comparison ---")  # Essential Output
+    console.print("\n[bold]--- End Comparison ---[/bold]")
 
 
 def FindLicenses(
@@ -1288,7 +1125,7 @@ def FindLicenses(
     licensesData: dict[str, object],
 ) -> None:
     """
-    Finds licenses matching require/disallow criteria using cached data.
+    Finds licenses matching require/disallow criteria using cached data and rich.
 
     Parameters
     ----------
@@ -1302,32 +1139,24 @@ def FindLicenses(
     requireTags = requireTags or []
     disallowTags = disallowTags or []
 
-    # Ensure at least one criterion is provided
     if not requireTags and not disallowTags:
-        # Essential Error
-        print(
-            "\nError: Please provide at least one --require or --disallow tag for finding licenses.",
-            file=sys.stderr,
+        console.print(
+            "\n[bold red]Error:[/bold red] Please provide at least one --require or --disallow tag for finding licenses."
         )
         return
 
-    # Filter out non-license entries
     licenseKeys = [k for k in licensesData.keys() if not k.startswith("data:")]
     if not licenseKeys:
-        print("No licenses found in cache.")  # Essential Info
+        console.print("[yellow]No licenses found in cache.[/yellow]")
         return
 
-    # Load rules data from cache to validate tags
     rulesData = licensesData.get("data:rules.yml", {}).get("content", {})
     if not rulesData:
-        # Essential Error
-        print(
-            "Error: rules.yml data not found in cache. Cannot validate find tags.",
-            file=sys.stderr,
+        console.print(
+            "[bold red]Error:[/bold red] rules.yml data not found in cache. Cannot validate find tags."
         )
         return
 
-    # Collect all valid tags from rules data
     allValidTags = set()
     for category in ["permissions", "conditions", "limitations"]:
         allValidTags.update(
@@ -1336,68 +1165,50 @@ def FindLicenses(
             if isinstance(rule, dict) and rule.get("tag")
         )
 
-    # Validate input tags
     invalidRequire = [tag for tag in requireTags if tag not in allValidTags]
     invalidDisallow = [tag for tag in disallowTags if tag not in allValidTags]
 
-    # Report invalid tags if any found
     if invalidRequire or invalidDisallow:
-        # Essential Error
-        print("\nError: Invalid rule tags provided:", file=sys.stderr)
+        console.print("\n[bold red]Error: Invalid rule tags provided:[/bold red]")
         if invalidRequire:
-            print(
-                f"  Invalid --require tags: {', '.join(invalidRequire)}",
-                file=sys.stderr,
-            )
+            console.print(f"  Invalid --require tags: {', '.join(invalidRequire)}")
         if invalidDisallow:
-            print(
-                f"  Invalid --disallow tags: {', '.join(invalidDisallow)}",
-                file=sys.stderr,
-            )
+            console.print(f"  Invalid --disallow tags: {', '.join(invalidDisallow)}")
         return
 
-    # Print search criteria header
-    print("\n--- Finding Licenses Matching Criteria ---")  # Essential Output
-    print(
-        "Require:", ", ".join(requireTags) if requireTags else "None"
-    )  # Essential Output
-    print(
-        "Disallow:", ", ".join(disallowTags) if disallowTags else "None"
-    )  # Essential Output
-    print("-" * 50)
+    console.print("\n[bold]--- Finding Licenses Matching Criteria ---[/bold]")
+    console.print(
+        f"[bold]Require:[/bold] {', '.join(requireTags) if requireTags else '[dim]None[/dim]'}"
+    )
+    console.print(
+        f"[bold]Disallow:[/bold] {', '.join(disallowTags) if disallowTags else '[dim]None[/dim]'}"
+    )
+    console.print("-" * 50)
 
-    # Filter licenses based on criteria
     matches = []
     for spdxLower in licenseKeys:
         data = licensesData[spdxLower]
-        # Combine all rules associated with the license
         licenseRules = set(
             data.get("permissions", [])
             + data.get("conditions", [])
             + data.get("limitations", [])
         )
-
-        # Check requirements and disallowals
         meetsRequire = all(tag in licenseRules for tag in requireTags)
         meetsDisallow = not any(tag in licenseRules for tag in disallowTags)
 
-        # Add to matches if all criteria met
         if meetsRequire and meetsDisallow:
             matches.append(data)
 
-    # Print results
     if not matches:
-        print("No licenses found matching all criteria.")  # Essential Output
+        console.print("[yellow]No licenses found matching all criteria.[/yellow]")
     else:
-        print(f"Found {len(matches)} matching license(s):")  # Essential Output
-        # Sort matches by SPDX ID and print
+        console.print(f"Found {len(matches)} matching license(s):")
         for matchData in sorted(matches, key=lambda x: x.get("spdx_id", "")):
-            print(
-                f"  - {matchData.get('spdx_id', 'N/A')} ({matchData.get('title', 'N/A')})"
-            )  # Essential Output
+            console.print(
+                f"  - [cyan]{matchData.get('spdx_id', 'N/A')}[/cyan] ({matchData.get('title', 'N/A')})"
+            )
 
-    # Print footer
-    print("-" * 50)
+    console.print("-" * 50)
 
 
 # --- Main Execution ---
@@ -1537,58 +1348,43 @@ Examples:
     # Update cache if needed, then load license and data files
     licensesData = UpdateAndLoadLicenseCache(cacheFilePath, args.refresh)
     if not licensesData:
-        # Essential Error already printed in function if needed
-        print(
-            "\nOperation failed: Could not load or update license data.",
-            file=sys.stderr,
-        )
+        # Error printed in function
         return 1
 
     # --- Handle Actions ---
 
-    # List simple
     if args.list:
         ListLicenses(licensesData)
         return 0
 
-    # List detailed
     if args.detailed_list:
         PrintDetailedList(licensesData)
         return 0
 
-    # Find licenses
     if args.find:
         FindLicenses(args.require, args.disallow, licensesData)
         return 0
 
-    # Show license info
     if args.info:
         requestedIdLower: str = args.info.lower()
-        # Check if license exists in cache before trying to fetch/display
         if not licensesData.get(requestedIdLower):
-            print(
-                f"\nError: License '{args.info}' not found in cache.", file=sys.stderr
+            console.print(
+                f"\n[bold red]Error:[/bold red] License '{args.info}' not found in cache."
             )
-            print(
-                "Use --list to see available licenses or --refresh to update cache.",
-                file=sys.stderr,
+            console.print(
+                "Use --list to see available licenses or --refresh to update cache."
             )
             return 1
         DisplayLicenseInfo(requestedIdLower, licensesData)
         return 0
 
-    # Show license placeholders
     if args.show_placeholders:
         requestedIdLower = args.show_placeholders.lower()
-        # Get full data (includes fetching if necessary)
         fullLicenseData = GetFullLicenseData(requestedIdLower, licensesData)
         if not fullLicenseData:
-            # Error message already printed by GetFullLicenseData
             return 1
 
-        # Get basic info for title/spdx display
         basicInfo = licensesData.get(requestedIdLower, {})
-        # Load fields data from cache for descriptions
         fieldsDataList = licensesData.get("data:fields.yml", {}).get("content", [])
         if not fieldsDataList:
             VerbosePrint(
@@ -1602,71 +1398,66 @@ Examples:
                 if isinstance(item, dict) and item.get("name")
             }
 
-        print(
-            f"\nPlaceholders for {basicInfo.get('title','N/A')} ({basicInfo.get('spdx_id','N/A')}):"
-        )  # Essential Output
+        console.print(
+            f"\n[bold]Placeholders for {basicInfo.get('title','N/A')} ({basicInfo.get('spdx_id','N/A')}):[/bold]"
+        )
         placeholders = FindPlaceholders(fullLicenseData.get("body", ""))
         if not placeholders:
-            print("  (No standard [placeholder] patterns found)")  # Essential Output
+            console.print("  ([dim]No standard [placeholder] patterns found[/dim])")
         else:
             for ph in sorted(list(placeholders)):
                 ph_lower = ph.lower()
                 fieldInfo = fieldsData.get(ph_lower)
                 description = (
-                    fieldInfo.get("description", "No description available")
+                    fieldInfo.get("description", "[dim]No description available[/dim]")
                     if fieldInfo
-                    else "No description available"
+                    else "[dim]No description available[/dim]"
                 )
                 argSuggestion = PLACEHOLDER_TO_ARG_MAP.get(
-                    ph_lower, f"(no direct argument for '[{ph}]')"
+                    ph_lower, f"[dim](no direct argument for '[{ph}]')[/dim]"
                 )
                 defaultInfo = ""
                 if ph_lower in ["year", "yyyy"]:
-                    defaultInfo = " (defaults to current year if not provided)"
-                print(f"  - [{ph}]")  # Essential Output
-                print(f"    Description: {description}")  # Essential Output
-                print(f"    Argument: {argSuggestion}{defaultInfo}")  # Essential Output
+                    defaultInfo = (
+                        " [dim](defaults to current year if not provided)[/dim]"
+                    )
+                console.print(f"  - [bold magenta][{ph}][/bold magenta]")
+                console.print(f"    [italic]Description:[/italic] {description}")
+                console.print(
+                    f"    [italic]Argument:[/italic] {argSuggestion}{defaultInfo}"
+                )
         return 0
 
-    # Compare licenses
     if args.compare:
         spdxIdsToCompare = [id.lower() for id in args.compare]
-        # Check if all requested licenses are in the cache first (basic info)
         allFoundInCache = True
         for spdxLower in spdxIdsToCompare:
             if spdxLower not in licensesData:
-                print(
-                    f"\nError: License '{spdxLower.upper()}' not found in cache. Cannot compare.",
-                    file=sys.stderr,
+                console.print(
+                    f"\n[bold red]Error:[/bold red] License '{spdxLower.upper()}' not found in cache. Cannot compare."
                 )
-                print(
-                    "Use --list to see available licenses or --refresh to update cache.",
-                    file=sys.stderr,
+                console.print(
+                    "Use --list to see available licenses or --refresh to update cache."
                 )
                 allFoundInCache = False
                 break
         if not allFoundInCache:
             return 1
 
-        CompareLicenses(
-            spdxIdsToCompare, licensesData
-        )  # Fetches full content inside if needed
+        CompareLicenses(spdxIdsToCompare, licensesData)
         return 0
 
-    # Fill license
     if args.license:
         requestedLicenseIdLower: str = args.license.lower()
-        # Get full data (includes fetching if necessary)
         fullLicenseData = GetFullLicenseData(requestedLicenseIdLower, licensesData)
         if not fullLicenseData:
-            # Error message already printed by GetFullLicenseData
             return 1
 
         title: str = fullLicenseData.get("front_matter", {}).get("title", "N/A")
         spdxId: str = fullLicenseData.get("spdx_id", "N/A")
         body: str = fullLicenseData.get("body", "")
 
-        print(f"\nUsing license: {title} ({spdxId})")  # Essential Output
+        console.print(f"\n[bold]Using license:[/bold] {title} ({spdxId})")
 
         # --- Prepare replacements ---
         currentYear: str = str(datetime.now().year)
@@ -1685,7 +1476,6 @@ Examples:
             replacements["projecturl"] = args.projecturl
 
         # --- Check Placeholders ---
-        # Load fields data from cache for descriptions
         fieldsDataList = licensesData.get("data:fields.yml", {}).get("content", [])
         if not fieldsDataList:
             VerbosePrint(
@@ -1710,7 +1500,6 @@ Examples:
             if phCheckKey == "name of copyright owner":
                 phCheckKey = "fullname"
 
-            # Check if a replacement value was provided
             if phCheckKey not in replacements:
                 argSuggestion: str = PLACEHOLDER_TO_ARG_MAP.get(ph_lower, f"'[{ph}]'")
                 fieldInfo = fieldsData.get(ph_lower)
@@ -1719,7 +1508,6 @@ Examples:
                     if fieldInfo
                     else "No description available"
                 )
-                # Print warning only if verbose
                 VerbosePrint(
                     f"  Warning: Placeholder [{ph}] ({description}) found, but no value provided via {argSuggestion}."
                 )
@@ -1734,29 +1522,24 @@ Examples:
                 outputPath: Path = Path(args.output)
                 with open(outputPath, "w", encoding="utf-8") as f:
                     f.write(filledLicense + "\n")  # Add trailing newline
-                # Essential Output
-                print(f"\nLicense successfully written to '{args.output}'")
+                console.print(f"\nLicense successfully written to '{args.output}'")
             except IOError as e:
-                # Essential Error
-                print(
-                    f"\nError writing to output file '{args.output}': {e}",
-                    file=sys.stderr,
+                console.print(
+                    f"\n[bold red]Error:[/bold red] writing to output file '{args.output}': {e}"
                 )
                 return 1
         else:
-            # Essential Output to stdout
+            # Print filled license text to stdout without extra formatting
             print("\n--- Filled License Text ---")
             print(filledLicense)
             print("--- End License Text ---\n")
         return 0
 
-    # If no action argument was given (shouldn't happen with mutually exclusive group, but good practice)
-    # Essential Error/Help
-    print(
-        "\nError: No action specified. Select one of: --list, --detailed-list, --info, --show-placeholders, --compare, --find, --license.",
-        file=sys.stderr,
+    # If no action argument was given
+    console.print(
+        "\n[bold red]Error:[/bold red] No action specified. Select one of: --list, --detailed-list, --info, --show-placeholders, --compare, --find, --license."
     )
-    parser.print_help(file=sys.stderr)
+    parser.print_help()  # Print help to stdout in this case
     return 1
 
 
