@@ -894,7 +894,7 @@ def FillLicenseTemplate(templateBody: str, replacements: dict[str, str]) -> str:
     return filledText
 
 
-def ListLicenses(licensesData: dict[str, object]) -> None:
+def ListLicenses(licensesData: dict[str, object], targetLicenseKeys: list[str]) -> None:
     """
     Prints a simple list of available licenses from cached data.
     (Demo 1: Option 1)
@@ -903,23 +903,27 @@ def ListLicenses(licensesData: dict[str, object]) -> None:
     ----------
     licensesData : dict[str, object]
         The dictionary containing cached license and data file information.
+    targetLicenseKeys : list[str]
+        A list of lowercase SPDX IDs (cache keys) to display.
     """
-    # Filter out non-license entries (data files)
-    licenseKeys = [k for k in licensesData.keys() if not k.startswith("data:")]
-
-    # Check if any licenses were found
-    if not licenseKeys:
-        console.print("[yellow]No licenses found in cache.[/yellow]")
+    # Check if any licenses were found/specified
+    if not targetLicenseKeys:
+        console.print("[yellow]No licenses found or specified.[/yellow]")
         return
 
     # Print header
     console.print("\n[bold]Available Licenses (SPDX ID: Title):[/bold]")
     console.print("[dim]" + ("-" * 50) + "[/dim]")
 
-    # Sort and print license info
-    sortedKeys: list[str] = sorted(licenseKeys)
+    # Sort and print license info for the target keys
+    sortedKeys: list[str] = sorted(targetLicenseKeys)
     for spdxLower in sortedKeys:
-        data = licensesData[spdxLower]
+        data = licensesData.get(spdxLower)
+        if not data or not isinstance(
+            data, dict
+        ):  # Should not happen if targetLicenseKeys are valid cache keys
+            VerbosePrint(f"Skipping invalid key: {spdxLower}")
+            continue
         spdx: str = data.get("spdx_id", "N/A")
         title: str = data.get("title", "N/A")
         console.print(f"  [cyan]{spdx:<25}[/cyan] : {title}")
@@ -928,7 +932,9 @@ def ListLicenses(licensesData: dict[str, object]) -> None:
     console.print("[dim]" + ("-" * 50) + "[/dim]")
 
 
-def PrintDetailedList(licensesData: dict[str, object]) -> None:
+def PrintDetailedList(
+    licensesData: dict[str, object], targetLicenseKeys: list[str]
+) -> None:
     """
     Prints a detailed list of licenses using cached basic info and rule labels.
     (Demo 2: Option 1)
@@ -937,13 +943,12 @@ def PrintDetailedList(licensesData: dict[str, object]) -> None:
     ----------
     licensesData : dict[str, object]
         The dictionary containing cached license and data file information.
+    targetLicenseKeys : list[str]
+        A list of lowercase SPDX IDs (cache keys) to display.
     """
-    # Filter out non-license entries
-    licenseKeys = [k for k in licensesData.keys() if not k.startswith("data:")]
-
-    # Check if any licenses were found
-    if not licenseKeys:
-        console.print("[yellow]No licenses found in cache.[/yellow]")
+    # Check if any licenses were found/specified
+    if not targetLicenseKeys:
+        console.print("[yellow]No licenses found or specified.[/yellow]")
         return
 
     # Load rules data from cache, handle missing case
@@ -965,10 +970,14 @@ def PrintDetailedList(licensesData: dict[str, object]) -> None:
     # Print header
     console.print("\n[bold]--- Detailed License List (from cache) ---[/bold]")
 
-    # Sort and iterate through licenses
-    sortedKeys: list[str] = sorted(licenseKeys)
+    # Sort and iterate through the target licenses
+    sortedKeys: list[str] = sorted(targetLicenseKeys)
     for i, spdxLower in enumerate(sortedKeys):
-        data = licensesData[spdxLower]
+        data = licensesData.get(spdxLower)
+        if not data or not isinstance(data, dict):
+            VerbosePrint(f"Skipping invalid key for detailed list: {spdxLower}")
+            continue
+
         spdx: str = data.get("spdx_id", "N/A")
         title: str = data.get("title", "N/A")
         nickname: str | None = data.get("nickname")  # Use .get for optional fields
@@ -1245,15 +1254,13 @@ def DisplayLicenseInfo(spdxIdLower: str, licensesData: dict[str, object]) -> Non
 def DisplayLicenseSummaryAfterWrite(
     spdxIdLower: str,
     licensesData: dict[str, object],
-    missingArgs: bool,
-    foundPlaceholders: set[str],
-    outputPath: Path,  # Added outputPath for the confirmation message
+    missingArgsFlag: bool,
+    unfilledPlaceholdersForWarning: set[str],
+    outputPath: Path,
 ) -> None:
     """
     Prints a summary of the license metadata after writing the file.
-    Excludes 'How to Apply' and 'Notable Projects'.
-    Conditionally shows unfilled placeholders.
-    (Demo 6: Option 1)
+    (Demo 6: Option 1 - with combined confirmation/header line)
 
     Parameters
     ----------
@@ -1261,25 +1268,32 @@ def DisplayLicenseSummaryAfterWrite(
         The lowercase SPDX ID of the license.
     licensesData : dict[str, object]
         The dictionary containing cached license and data file information.
-    missingArgs : bool
-        True if placeholders were detected but not filled by user arguments.
-    foundPlaceholders : set[str]
-        The set of placeholders found in the license body.
+    missingArgsFlag : bool
+        True if placeholders were detected in body but not filled by user arguments.
+    unfilledPlaceholdersForWarning : set[str]
+        The set of original placeholder names from the body for which no direct
+        CLI argument was supplied by the user.
     outputPath : Path
         The path where the license was written.
     """
-    # Essential Output: Confirmation message first
-    console.print(f"\nLicense successfully written to '[green]{outputPath}[/green]'")
-
     fullLicenseData = GetFullLicenseData(spdxIdLower, licensesData)
     if not fullLicenseData:
-        return  # Error message already printed
+        # If GFLD fails, it prints an error. We might want to still print a basic confirmation.
+        console.print(
+            f"\n--- License file written to [green]{outputPath}[/green], but summary unavailable. ---"
+        )
+        return
 
     fm: dict[str, object] = fullLicenseData.get("front_matter", {})
     spdxId: str = fullLicenseData.get("spdx_id", "N/A")
     title: str = fm.get("title", "N/A")
 
-    # Load rules and fields data from cache
+    # Combined confirmation and summary header
+    console.print(
+        f"\n--- [bold]{title}[/bold] written to [green]{outputPath}[/green] ---"
+    )
+
+    # Load rules and fields data from cache for the rest of the summary
     rulesData = licensesData.get("data:rules.yml", {}).get("content", {})
     fieldsDataList = licensesData.get("data:fields.yml", {}).get("content", [])
     fieldsData = {
@@ -1287,8 +1301,6 @@ def DisplayLicenseSummaryAfterWrite(
         for item in fieldsDataList
         if isinstance(item, dict) and item.get("name")
     }
-
-    console.print(f"\n[bold]--- License Summary: {title} ({spdxId}) ---[/bold]")
 
     if fm.get("nickname"):
         console.print(f"\n[italic]Nickname:[/italic] {fm['nickname']}")
@@ -1299,7 +1311,6 @@ def DisplayLicenseSummaryAfterWrite(
             console.print(textwrap.indent(text, "  "))
 
     PrintTextBlock("Description", fm.get("description"))
-    # Excluded: How to Apply
 
     def PrintRulesWithLabels(
         label: str, key: str, rulesConfig: dict, color: str
@@ -1327,21 +1338,15 @@ def DisplayLicenseSummaryAfterWrite(
     PrintRulesWithLabels("Conditions", "conditions", rulesData, "yellow")
     PrintRulesWithLabels("Limitations", "limitations", rulesData, "red")
 
-    # Excluded: Notable Projects
-
     PrintTextBlock("Note", fm.get("note"))
 
-    # Conditionally show placeholders
-    if (
-        missingArgs and foundPlaceholders
-    ):  # Use foundPlaceholders (originally unfilledPlaceholders)
+    # Conditionally show placeholders that lacked user-provided arguments
+    if missingArgsFlag and unfilledPlaceholdersForWarning:
         console.print(
-            "\n[bold yellow]Warning: Some placeholders were not filled:[/bold yellow]"
+            "\n[bold yellow]Warning: Some placeholders lacked direct arguments:[/bold yellow]"
         )
-        for ph in sorted(
-            list(foundPlaceholders)
-        ):  # Iterate over the set of *unfilled* placeholders
-            ph_lower = ph.lower()
+        for ph_original_case in sorted(list(unfilledPlaceholdersForWarning)):
+            ph_lower = ph_original_case.lower()
             fieldInfo = fieldsData.get(ph_lower)
             description = (
                 fieldInfo.get("description", "No description available")
@@ -1349,44 +1354,21 @@ def DisplayLicenseSummaryAfterWrite(
                 else "No description available"
             )
             argSuggestion = PLACEHOLDER_TO_ARG_MAP.get(
-                ph_lower, f"(no direct argument for '[{ph}]')"
+                ph_lower, f"(no direct argument for '[{ph_original_case}]')"
             )
             defaultInfo = ""
-            # Determine if it was year and defaulted, or just missing
             if ph_lower in ["year", "yyyy"]:
-                # This assumes 'year' and 'yyyy' are always in replacements (defaulted if not provided)
-                # So if they are in foundPlaceholders, it means they were *not* in the provided args for fill
-                # But the logic in main() for missingArgs is about placeholders *not in replacements dict*.
-                # The description for Demo 6 implies it should show which defaulted.
-                # The existing logic in `main` for `unfilledPlaceholders` passed here correctly lists those
-                # for which no CLI arg was provided by the user to `replacements`.
-                # If 'year'/'yyyy' is in `unfilledPlaceholders`, it means no -y was given AND it was not defaulted *prior* to this function call
-                # However, 'year' *is* defaulted in main before `FillLicenseTemplate`
-                # So `unfilledPlaceholders` here should represent those that truly lack a value.
-                # For year, if it's in `unfilledPlaceholders`, it means it wasn't resolved by user args.
-                # The original script's `unfilledPlaceholders` correctly captures this.
-                # If 'year' is listed here, it means the user *didn't* provide -y, and we want to indicate it defaulted.
-                # The existing `defaultInfo` logic in `main` for the --show-placeholders might be more relevant here.
-                # Let's re-evaluate: `unfilledPlaceholders` is a set of placeholders found in body but *not* in the `replacements` dict
-                # before default year is added. The `replacements` dict used for filling *does* include default year.
-                # So, if "year" or "yyyy" is in `unfilledPlaceholders` it means CLI arg was not given.
-                # And the license template WILL be filled with default year.
-                # The warning should reflect that.
-                if ph_lower in [
-                    "year",
-                    "yyyy",
-                ]:  # This placeholder was found in body but no specific arg given
-                    defaultInfo = " (defaulted to current year)"
-                else:  # For other placeholders, if they are here, they are truly unfilled.
-                    defaultInfo = " (argument missing)"
+                defaultInfo = " (defaulted to current year)"
+            else:
+                # For other placeholders, if they are in this set, they were truly unfilled by args
+                # and likely remain in the template unless they have a non-CLI default mechanism.
+                defaultInfo = " (argument missing, may remain in file)"
 
-            console.print(f"  - [bold magenta][{ph}][/bold magenta]")
+            console.print(f"  - [bold magenta][{ph_original_case}][/bold magenta]")
             console.print(f"    [dim]Description:[/dim] {description}")
             console.print(f"    [dim]Argument:[/dim] {argSuggestion}{defaultInfo}")
 
-    console.print(
-        "[dim]" + ("-" * 50) + "[/dim]"
-    )  # Added footer as per Demo 6 description
+    console.print("[dim]" + ("-" * 50) + "[/dim]")
 
 
 def CompareLicenses(spdxIdsLower: list[str], licensesData: dict[str, object]) -> None:
@@ -1401,39 +1383,54 @@ def CompareLicenses(spdxIdsLower: list[str], licensesData: dict[str, object]) ->
     licensesData : dict[str, object]
         The dictionary containing cached license and data file information.
     """
-    # Check if enough licenses are provided
-    if len(spdxIdsLower) < 2:
-        # Essential Error
+    # Check if enough licenses are provided for comparison by the user
+    if (
+        len(spdxIdsLower) < 1
+    ):  # Needs at least one if specified, or implies all if empty but handled by main
         console.print(
-            "\n[bold red]Error:[/bold red] Need at least two license SPDX IDs to compare."
+            "\n[bold red]Error:[/bold red] Please specify at least one license to compare, or none to compare all."
         )
         return
 
     # Get full data for each license to compare
     licensesToCompare = []
+    validSpdxIdsForComparison = []
     for spdxLower in spdxIdsLower:
         fullLicenseData = GetFullLicenseData(spdxLower, licensesData)
         if fullLicenseData:
             licensesToCompare.append(fullLicenseData)
+            validSpdxIdsForComparison.append(
+                spdxLower
+            )  # Keep track of successfully fetched ones
         else:
             # GetFullLicenseData prints essential error
             VerbosePrint(
                 f"Could not get data for {spdxLower.upper()}, skipping from comparison."
             )
 
-    # Check if we have enough valid licenses for comparison
+    # Check if we have enough valid licenses for actual comparison
     if len(licensesToCompare) < 2:
-        # Essential Error
-        console.print(
-            "\n[bold red]Error:[/bold red] Cannot perform comparison: Need at least two valid licenses."
-        )
+        if (
+            len(spdxIdsLower) == 1 and len(licensesToCompare) == 1
+        ):  # User specified one, it was valid
+            console.print(
+                f"\n[yellow]Warning:[/yellow] Only one valid license ('{validSpdxIdsForComparison[0].upper()}') provided or found. Cannot compare."
+            )
+        elif (
+            not licensesToCompare and spdxIdsLower
+        ):  # User specified some, none were valid
+            console.print(
+                "\n[bold red]Error:[/bold red] None of the specified licenses could be found or fetched for comparison."
+            )
+        else:  # General case, e.g. user specified zero IDs and less than 2 were found/valid
+            console.print(
+                "\n[bold red]Error:[/bold red] Cannot perform comparison: Need at least two valid licenses."
+            )
         return
 
     # Load rules data from cache (for tag to category mapping if needed)
     rulesData = licensesData.get("data:rules.yml", {}).get("content", {})
     if not rulesData:
-        # Not strictly essential for this format if KEY_RULES_FOR_COMPARISON is self-contained
-        # but good for consistency or future enhancements.
         VerbosePrint(
             "[yellow]Warning:[/yellow] rules.yml data not found in cache. Full rule context might be limited."
         )
@@ -1649,12 +1646,15 @@ def main() -> int:
             """\
 Examples:
   %(prog)s --list                           List all available licenses (uses cache).
-  %(prog)s --detailed-list                  List licenses with key details (uses cache).
+  %(prog)s --list MIT Apache-2.0            List specified licenses.
+  %(prog)s --detailed-list                  List all licenses with key details (uses cache).
+  %(prog)s --detailed-list MIT              List specified license with key details.
   %(prog)s --refresh --list                 Force refresh cache then list licenses (shows progress bar).
   %(prog)s -v --refresh --list              Force refresh cache then list licenses (verbose).
   %(prog)s --info MIT                       Show detailed info (uses cache, fetches full content if needed).
   %(prog)s --show-placeholders NCSA         Show placeholders (uses cache, fetches full content if needed).
-  %(prog)s --compare MIT Apache-2.0 GPL-3.0 Compare licenses (uses cache, fetches full content if needed).
+  %(prog)s --compare MIT Apache-2.0 GPL-3.0 Compare specified licenses.
+  %(prog)s --compare                        Compare all available licenses.
   %(prog)s --find --require commercial-use  Find licenses allowing commercial use (uses cache).
   %(prog)s --find --require disclose-source --disallow liability Find licenses (uses cache).
   %(prog)s --license MIT -f "Jane Doe"      Fill license and save to LICENSE, then show summary.
@@ -1671,8 +1671,8 @@ Examples:
     )
     parser.add_argument(
         "--cache-file",
-        type=Path,  # Use Path for type hint
-        default=Path(CACHE_FILENAME),  # Use Path for default
+        type=Path,
+        default=Path(CACHE_FILENAME),
         help=f"Path to the license cache file (default: {CACHE_FILENAME}).",
     )
     parser.add_argument(
@@ -1687,33 +1687,36 @@ Examples:
     actionGroup.add_argument(
         "-l",
         "--license",
+        metavar="LICENSE_ID",
         help="SPDX ID of the license template to fill (case-insensitive).",
     )
     actionGroup.add_argument(
         "--list",
-        action="store_true",
-        help="List available licenses from cache and exit.",
+        nargs="*",  # Zero or more license IDs
+        metavar="LICENSE_ID",
+        help="List available licenses. If IDs provided, lists only those. Otherwise, lists all.",
     )
     actionGroup.add_argument(
         "--detailed-list",
-        action="store_true",
-        help="List licenses with key details from cache and exit.",
+        nargs="*",  # Zero or more license IDs
+        metavar="LICENSE_ID",
+        help="List licenses with key details. If IDs provided, details only those. Otherwise, details all.",
     )
     actionGroup.add_argument(
         "--info",
         metavar="LICENSE_ID",
-        help="Show detailed metadata (fetches full content if needed).",
+        help="Show detailed metadata for a specific license (fetches full content if needed).",
     )
     actionGroup.add_argument(
         "--show-placeholders",
         metavar="LICENSE_ID",
-        help="Show placeholders (fetches full content if needed).",
+        help="Show placeholders for a specific license (fetches full content if needed).",
     )
     actionGroup.add_argument(
         "--compare",
-        nargs="+",
+        nargs="*",  # Zero or more license IDs
         metavar="LICENSE_ID",
-        help="Compare the specified licenses based on rules and metadata.",
+        help="Compare specified licenses. If no IDs, compares all available licenses.",
     )
     actionGroup.add_argument(
         "--find",
@@ -1755,10 +1758,10 @@ Examples:
     fillGroup.add_argument("-u", "--projecturl", help="Project URL.")
     fillGroup.add_argument(
         "-o", "--output", help="Output file path. Defaults to 'LICENSE'."
-    )  # Changed default
+    )
 
     args = parser.parse_args()
-    cacheFilePath = args.cache_file  # Already a Path object
+    cacheFilePath = args.cache_file
 
     # Set global verbose flag
     global _VERBOSE
@@ -1767,22 +1770,69 @@ Examples:
     # Update cache if needed, then load license and data files
     licensesData = UpdateAndLoadLicenseCache(cacheFilePath, args.refresh)
     if not licensesData:
-        # Essential Error already printed in function if needed
         console.print(
             "[bold red]Error:[/bold red] Operation failed: Could not load or update license data."
         )
         return 1
 
+    # Helper to get all valid license keys from cache
+    def GetAllLicenseCacheKeys(cached_data: dict) -> list[str]:
+        return [k for k in cached_data.keys() if not k.startswith("data:")]
+
     # --- Handle Actions ---
 
-    # List simple (Demo 1: Option 1)
-    if args.list:
-        ListLicenses(licensesData)
+    # List licenses
+    if (
+        args.list is not None
+    ):  # --list flag was used (args.list will be a list: empty or with items)
+        targetLicenseKeys: list[str] = []
+        if not args.list:  # Empty list means --list was used with no IDs -> list all
+            targetLicenseKeys = GetAllLicenseCacheKeys(licensesData)
+            if not targetLicenseKeys:
+                console.print("[yellow]No licenses found in cache to list.[/yellow]")
+                return 0
+        else:  # Specific IDs provided
+            for id_str in args.list:
+                id_lower = id_str.lower()
+                if id_lower in licensesData and not id_lower.startswith("data:"):
+                    targetLicenseKeys.append(id_lower)
+                else:
+                    console.print(
+                        f"[yellow]Warning:[/yellow] License '{id_str}' not found in cache. Skipping."
+                    )
+            if not targetLicenseKeys:
+                console.print(
+                    "[yellow]None of the specified licenses were found in cache.[/yellow]"
+                )
+                return 0
+        ListLicenses(licensesData, targetLicenseKeys)
         return 0
 
-    # List detailed (Demo 2: Option 1)
-    if args.detailed_list:
-        PrintDetailedList(licensesData)
+    # List detailed
+    if args.detailed_list is not None:
+        targetLicenseKeys = []
+        if not args.detailed_list:  # Empty list -> all
+            targetLicenseKeys = GetAllLicenseCacheKeys(licensesData)
+            if not targetLicenseKeys:
+                console.print(
+                    "[yellow]No licenses found in cache for detailed list.[/yellow]"
+                )
+                return 0
+        else:  # Specific IDs
+            for id_str in args.detailed_list:
+                id_lower = id_str.lower()
+                if id_lower in licensesData and not id_lower.startswith("data:"):
+                    targetLicenseKeys.append(id_lower)
+                else:
+                    console.print(
+                        f"[yellow]Warning:[/yellow] License '{id_str}' not found for detailed list. Skipping."
+                    )
+            if not targetLicenseKeys:
+                console.print(
+                    "[yellow]None of the specified licenses were found for detailed list.[/yellow]"
+                )
+                return 0
+        PrintDetailedList(licensesData, targetLicenseKeys)
         return 0
 
     # Find licenses
@@ -1790,13 +1840,12 @@ Examples:
         FindLicenses(args.require, args.disallow, licensesData)
         return 0
 
-    # Show license info (Demo 3: Option 1)
+    # Show license info
     if args.info:
         requestedIdLower: str = args.info.lower()
-        # Check if license exists in cache before trying to fetch/display
         if not licensesData.get(requestedIdLower) and not licensesData.get(
             f"data:{requestedIdLower}"
-        ):  # also check if it's a data file key
+        ):
             basicLicenseInfo = None
             for key, value in licensesData.items():
                 if (
@@ -1804,10 +1853,8 @@ Examples:
                     and isinstance(value, dict)
                     and value.get("spdx_id", "").lower() == requestedIdLower
                 ):
-                    basicLicenseInfo = (
-                        value  # Found by spdx_id in value rather than key
-                    )
-                    requestedIdLower = key  # Update to use the cache key
+                    basicLicenseInfo = value
+                    requestedIdLower = key
                     break
             if not basicLicenseInfo:
                 console.print(
@@ -1820,16 +1867,12 @@ Examples:
         DisplayLicenseInfo(requestedIdLower, licensesData)
         return 0
 
-    # Show license placeholders (Demo 4: Option 1)
+    # Show license placeholders
     if args.show_placeholders:
         requestedIdLower = args.show_placeholders.lower()
-        # Get full data (includes fetching if necessary)
         fullLicenseData = GetFullLicenseData(requestedIdLower, licensesData)
         if not fullLicenseData:
-            # Error message already printed by GetFullLicenseData or initial check
-            if not licensesData.get(
-                requestedIdLower
-            ):  # Specific check if GFLD failed early
+            if not licensesData.get(requestedIdLower):
                 console.print(
                     f"\n[bold red]Error:[/bold red] License '{args.show_placeholders}' not found in cache."
                 )
@@ -1838,30 +1881,24 @@ Examples:
                 )
             return 1
 
-        # Get basic info for title/spdx display
         basicInfo = licensesData.get(requestedIdLower, {})
-        # Load fields data from cache for descriptions
         fieldsDataList = licensesData.get("data:fields.yml", {}).get("content", [])
-        if not fieldsDataList:
-            VerbosePrint(
-                "[yellow]Warning:[/yellow] fields.yml data not found in cache. Placeholder descriptions unavailable."
-            )
-            fieldsData = {}
-        else:
-            fieldsData = {
+        fieldsData = (
+            {
                 item["name"].lower(): item
                 for item in fieldsDataList
                 if isinstance(item, dict) and item.get("name")
             }
+            if fieldsDataList
+            else {}
+        )
 
         console.print(
             f"\n[bold]--- Placeholders for {basicInfo.get('title','N/A')} ({basicInfo.get('spdx_id','N/A')}) ---[/bold]"
-        )  # Essential Output
+        )
         placeholders = FindPlaceholders(fullLicenseData.get("body", ""))
         if not placeholders:
-            console.print(
-                "  [dim](No standard [placeholder] patterns found)[/dim]"
-            )  # Essential Output
+            console.print("  [dim](No standard [placeholder] patterns found)[/dim]")
         else:
             for ph in sorted(list(placeholders)):
                 ph_lower = ph.lower()
@@ -1877,51 +1914,53 @@ Examples:
                 defaultInfo = ""
                 if ph_lower in ["year", "yyyy"]:
                     defaultInfo = " (defaults to current year if not provided)"
-                console.print(
-                    f"  - [bold magenta][{ph}][/bold magenta]"
-                )  # Essential Output
-                console.print(
-                    f"    [dim]Description:[/dim] {description}"
-                )  # Essential Output
-                console.print(
-                    f"    [dim]Argument:[/dim] {argSuggestion}{defaultInfo}"
-                )  # Essential Output
-        console.print("\n[bold]--- End Placeholder List ---[/bold]")  # Added footer
+                console.print(f"  - [bold magenta][{ph}][/bold magenta]")
+                console.print(f"    [dim]Description:[/dim] {description}")
+                console.print(f"    [dim]Argument:[/dim] {argSuggestion}{defaultInfo}")
+        console.print("\n[bold]--- End Placeholder List ---[/bold]")
         return 0
 
-    # Compare licenses (Demo 5: Key Rule Indicator Table)
-    if args.compare:
-        spdxIdsToCompare = [id.lower() for id in args.compare]
-        # Check if all requested licenses are in the cache first (basic info)
-        allFoundInCache = True
-        for spdxLower in spdxIdsToCompare:
-            if spdxLower not in licensesData:
+    # Compare licenses
+    if args.compare is not None:
+        targetLicenseKeysLower = []
+        if not args.compare:  # Empty list -> compare all
+            targetLicenseKeysLower = GetAllLicenseCacheKeys(licensesData)
+            if len(targetLicenseKeysLower) < 2:
                 console.print(
-                    f"\n[bold red]Error:[/bold red] License '{spdxLower.upper()}' not found in cache. Cannot compare."
+                    f"\n[yellow]Warning:[/yellow] Need at least two licenses in cache to compare all. Found {len(targetLicenseKeysLower)}."
                 )
+                return 0
+        else:  # Specific IDs
+            for id_str in args.compare:
+                id_lower = id_str.lower()
+                if id_lower in licensesData and not id_lower.startswith("data:"):
+                    targetLicenseKeysLower.append(id_lower)
+                else:
+                    console.print(
+                        f"[yellow]Warning:[/yellow] License '{id_str}' not found for comparison. Skipping."
+                    )
+            if (
+                len(targetLicenseKeysLower) < 1
+            ):  # Check if any valid licenses were specified
                 console.print(
-                    "Use --list to see available licenses or --refresh to update cache."
+                    "[yellow]None of the specified licenses were found for comparison.[/yellow]"
                 )
-                allFoundInCache = False
-                break
-        if not allFoundInCache:
-            return 1
+                return 0
+            if len(targetLicenseKeysLower) == 1:
+                console.print(
+                    f"[yellow]Warning:[/yellow] Only one valid license ('{targetLicenseKeysLower[0].upper()}') specified. Need at least two to compare."
+                )
+                return 0
 
-        CompareLicenses(
-            spdxIdsToCompare, licensesData
-        )  # Fetches full content inside if needed
+        CompareLicenses(targetLicenseKeysLower, licensesData)
         return 0
 
-    # Fill license (Demo 6: Option 1)
+    # Fill license
     if args.license:
         requestedLicenseIdLower: str = args.license.lower()
-        # Get full data (includes fetching if necessary)
         fullLicenseData = GetFullLicenseData(requestedLicenseIdLower, licensesData)
         if not fullLicenseData:
-            # Error message already printed by GetFullLicenseData or initial check
-            if not licensesData.get(
-                requestedLicenseIdLower
-            ):  # Specific check if GFLD failed early
+            if not licensesData.get(requestedLicenseIdLower):
                 console.print(
                     f"\n[bold red]Error:[/bold red] License '{args.license}' not found in cache."
                 )
@@ -1934,72 +1973,60 @@ Examples:
         spdxId: str = fullLicenseData.get("spdx_id", "N/A")
         body: str = fullLicenseData.get("body", "")
 
-        console.print(
-            f"\nUsing license: [bold cyan]{title}[/bold cyan] ({spdxId})"
-        )  # Essential Output
+        console.print(f"\nUsing license: [bold cyan]{title}[/bold cyan] ({spdxId})")
 
         # --- Prepare replacements ---
         currentYear: str = str(datetime.now().year)
-        replacements: dict[str, str] = {}  # CLI provided replacements
-        final_replacements: dict[str, str] = {}  # Replacements after defaults
+        user_provided_replacements: dict[str, str] = (
+            {}
+        )  # Only what user explicitly passed via CLI
 
-        # User provided args first
         if args.fullname:
-            replacements["fullname"] = args.fullname
-            replacements["name of copyright owner"] = args.fullname
+            user_provided_replacements["fullname"] = args.fullname
+            user_provided_replacements["name of copyright owner"] = args.fullname
         if args.project:
-            replacements["project"] = args.project
+            user_provided_replacements["project"] = args.project
         if args.email:
-            replacements["email"] = args.email
+            user_provided_replacements["email"] = args.email
         if args.projecturl:
-            replacements["projecturl"] = args.projecturl
-        if args.year:
-            replacements["year"] = args.year
-            replacements["yyyy"] = args.year
+            user_provided_replacements["projecturl"] = args.projecturl
+        if args.year:  # User explicitly set year
+            user_provided_replacements["year"] = args.year
+            user_provided_replacements["yyyy"] = args.year
 
-        # Defaults (year is crucial)
-        final_replacements["year"] = replacements.get("year", currentYear)
-        final_replacements["yyyy"] = replacements.get(
-            "yyyy", currentYear
-        )  # Ensure yyyy also gets this default or user value
-
-        # Add other user-provided replacements to final_replacements
-        for key, value in replacements.items():
-            if key not in [
-                "year",
-                "yyyy",
-            ]:  # Avoid overwriting if year was explicitly set
-                final_replacements[key] = value
+        # --- Final replacements for template filling (includes defaults) ---
+        final_template_replacements: dict[str, str] = {}
+        # Apply defaults first
+        final_template_replacements["year"] = currentYear
+        final_template_replacements["yyyy"] = currentYear
+        # Then override with user-provided values
+        final_template_replacements.update(user_provided_replacements)
 
         # --- Check Placeholders ---
         foundPlaceholdersInBody = FindPlaceholders(body)
-        unfilledPlaceholdersForWarning: set[str] = set()
+        unfilledPlaceholdersForWarning: set[str] = (
+            set()
+        )  # Stores original case from body
         missingArgsFlag: bool = False
 
         VerbosePrint("Checking required placeholders against provided arguments:")
-        for ph_in_body in foundPlaceholdersInBody:
-            ph_lower = ph_in_body.lower()
-            check_key = ph_lower
-            if check_key == "yyyy":
-                check_key = "year"
-            elif check_key == "name of copyright owner":
-                check_key = "fullname"
+        for ph_in_body_original_case in foundPlaceholdersInBody:
+            ph_lower = ph_in_body_original_case.lower()
+            check_key_for_user_args = ph_lower
+            if check_key_for_user_args == "yyyy":
+                check_key_for_user_args = "year"
+            elif check_key_for_user_args == "name of copyright owner":
+                check_key_for_user_args = "fullname"
 
-            # Check if this placeholder was effectively covered by a CLI argument in `replacements`
-            # (before defaults were applied to `final_replacements`)
-            if (
-                check_key not in replacements
-            ):  # `replacements` only has what user explicitly passed
-                # This placeholder was in the body but no direct CLI arg was given for it
+            # Check if user explicitly provided an argument for this conceptual placeholder
+            if check_key_for_user_args not in user_provided_replacements:
                 missingArgsFlag = True
-                unfilledPlaceholdersForWarning.add(
-                    ph_in_body
-                )  # Add original placeholder name
+                unfilledPlaceholdersForWarning.add(ph_in_body_original_case)
                 argSuggestion: str = PLACEHOLDER_TO_ARG_MAP.get(
-                    ph_lower, f"'[{ph_in_body}]'"
+                    ph_lower, f"'[{ph_in_body_original_case}]'"
                 )
                 VerbosePrint(
-                    f"  [yellow]Warning:[/yellow] Placeholder [{ph_in_body}] found, but no value explicitly provided via {argSuggestion}."
+                    f"  [yellow]Warning:[/yellow] Placeholder [{ph_in_body_original_case}] found, but no value explicitly provided via {argSuggestion}."
                 )
 
         if missingArgsFlag:
@@ -2007,24 +2034,18 @@ Examples:
                 "  [yellow]License will be generated; some placeholders might use defaults or remain if no default exists.[/yellow]"
             )
 
-        # --- Fill Template using final_replacements (which includes defaults) ---
-        filledLicense: str = FillLicenseTemplate(body, final_replacements)
+        # --- Fill Template ---
+        filledLicense: str = FillLicenseTemplate(body, final_template_replacements)
 
         # --- Determine Output Path ---
-        outputPath: Path
-        if args.output:
-            outputPath = Path(args.output)
-        else:
-            outputPath = Path("LICENSE")  # Default filename
+        outputPath: Path = Path(args.output) if args.output else Path("LICENSE")
 
         # --- Write License File ---
         try:
-            outputPath.parent.mkdir(parents=True, exist_ok=True)  # Ensure dir exists
+            outputPath.parent.mkdir(parents=True, exist_ok=True)
             with open(outputPath, "w", encoding="utf-8") as f:
-                f.write(filledLicense + "\n")  # Add trailing newline
-            # Confirmation message moved to DisplayLicenseSummaryAfterWrite
+                f.write(filledLicense + "\n")
         except IOError as e:
-            # Essential Error
             console.print(
                 f"\n[bold red]Error:[/bold red] writing to output file '{outputPath}': {e}"
             )
@@ -2034,20 +2055,33 @@ Examples:
         DisplayLicenseSummaryAfterWrite(
             requestedLicenseIdLower,
             licensesData,
-            missingArgsFlag,  # Pass flag indicating if any CLI args were missing for found placeholders
-            unfilledPlaceholdersForWarning,  # Pass the set of placeholders that lacked direct CLI args
+            missingArgsFlag,
+            unfilledPlaceholdersForWarning,
             outputPath,
         )
-
         return 0
 
-    # If no action argument was given
-    # Essential Error/Help
-    console.print(
-        "\n[bold red]Error:[/bold red] No action specified. Select one of: --list, --detailed-list, --info, --show-placeholders, --compare, --find, --license."
-    )
-    parser.print_help(file=sys.stderr)  # Print help to stderr
-    return 1
+    # If no action argument was given and not caught by argparse
+    # (should ideally be caught by parser if no default action or if group is required)
+    # This check is a fallback.
+    if not any(
+        [
+            args.list is not None,
+            args.detailed_list is not None,
+            args.info,
+            args.show_placeholders,
+            args.compare is not None,
+            args.find,
+            args.license,
+        ]
+    ):
+        console.print(
+            "\n[bold red]Error:[/bold red] No action specified. Select one of: --list, --detailed-list, --info, --show-placeholders, --compare, --find, --license."
+        )
+        parser.print_help(file=sys.stderr)
+        return 1
+
+    return 0  # Should not be reached if an action is handled
 
 
 if __name__ == "__main__":
