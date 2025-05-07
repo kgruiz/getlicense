@@ -4,7 +4,7 @@ import base64
 import json  # For caching
 import os
 import re
-import textwrap  # For formatting descriptions
+import textwrap
 from datetime import datetime
 from pathlib import Path
 
@@ -17,20 +17,24 @@ OWNER: str = "github"
 REPO: str = "choosealicense.com"
 BRANCH: str = "gh-pages"
 LICENSES_PATH: str = "_licenses"
+DATA_PATH: str = "_data"
 CACHE_FILENAME: str = "license_cache.json"
 
-# --- Map common placeholders to command-line arguments ---
+# --- Map standard placeholders to command-line arguments ---
+# Based on fields.yml
 PLACEHOLDER_TO_ARG_MAP: dict[str, str] = {
-    "year": "--year",
     "fullname": "--fullname",
-    "project": "--project",
+    "login": "(no direct argument for '[login]')",
     "email": "--email",
+    "project": "--project",
+    "description": "(no direct argument for '[description]')",
+    "year": "--year",
     "projecturl": "--projecturl",
-    "yyyy": "--year",  # Handle Apache's format
-    "name of copyright owner": "--fullname",  # Handle Apache's format
+    "yyyy": "--year",  # Handle Apache's format, maps to year
+    "name of copyright owner": "--fullname",  # Handle Apache's format, maps to fullname
 }
 
-# --- GitHub API and Fetching Functions (Mostly Unchanged) ---
+# --- Helper Functions (GitHub API, Fetching, Parsing) ---
 
 
 def GetGithubApi(endpoint: str) -> dict | list | None:
@@ -64,74 +68,43 @@ def GetGithubApi(endpoint: str) -> dict | list | None:
         return None
 
 
-def FetchLicenseListFromApi() -> list[dict[str, str]] | None:
-    """Fetches the list of license files *directly* from the GitHub repo API."""
-    endpoint: str = f"/repos/{OWNER}/{REPO}/contents/{LICENSES_PATH}?ref={BRANCH}"
+def FetchGithubDirListing(repo_path: str) -> list[dict[str, object]] | None:
+    """Fetches the list of files in a directory from the GitHub repo API."""
+    endpoint: str = f"/repos/{OWNER}/{REPO}/contents/{repo_path}?ref={BRANCH}"
     data = GetGithubApi(endpoint)
     if not data or not isinstance(data, list):
-        print(f"Could not fetch or parse directory listing for {LICENSES_PATH}")
+        print(f"Could not fetch or parse directory listing for {repo_path}")
         return None
-
-    licenseFiles: list[dict[str, str]] = []
-    for item in data:
-        # Ensure item is a dict and has necessary keys before accessing
-        if (
-            isinstance(item, dict)
-            and item.get("type") == "file"
-            and item.get("name", "").endswith(".txt")
-        ):
-            # Check for download_url, prefer it. Fallback might be needed if API changes.
-            download_url = item.get("download_url")
-            if not download_url:
-                print(
-                    f"Warning: No download_url found for {item.get('name', 'unknown file')}, attempting to construct."
-                )
-                # Potentially construct raw URL, but download_url is more reliable
-                # download_url = f"https://raw.githubusercontent.com/{OWNER}/{REPO}/{BRANCH}/{item.get('path')}"
-                # For now, skip if no download_url
-                print(
-                    f"Skipping {item.get('name', 'unknown file')} due to missing download_url."
-                )
-                continue
-
-            licenseFiles.append(
-                {
-                    "name": item.get("name", "unknown.txt"),
-                    "path": item.get("path", ""),
-                    "sha": item.get("sha", ""),  # Git blob SHA
-                    "download_url": download_url,
-                }
-            )
-    return licenseFiles
+    return data
 
 
-def FetchLicenseContent(downloadUrl: str) -> str | None:
-    """Fetches the content of a single license file."""
+def FetchFileContent(downloadUrl: str) -> str | None:
+    """Fetches the content of a single file from a direct download URL."""
     try:
         response = requests.get(downloadUrl, timeout=10)  # Add timeout
         response.raise_for_status()
         return response.text
     except requests.exceptions.Timeout:
-        print(f"Error: Timeout fetching license content from {downloadUrl}")
+        print(f"Error: Timeout fetching content from {downloadUrl}")
         return None
     except requests.exceptions.RequestException as e:
-        print(f"Error fetching license content from {downloadUrl}: {e}")
+        print(f"Error fetching content from {downloadUrl}: {e}")
         return None
     except Exception as e:
         print(f"An unexpected error occurred fetching content: {e}")
         return None
 
 
-# --- Parsing Function (Mostly Unchanged, returns full data) ---
+# --- Parsing Functions ---
 
 
-def ParseLicenseData(filename: str, fileContent: str) -> dict[str, any] | None:
+def ParseLicenseFile(filename: str, fileContent: str) -> dict[str, object] | None:
     """
     Parses SPDX ID, full front matter, and body from license file content.
     Returns dict including 'spdx_id', 'front_matter', 'body', or None.
     """
     spdxId: str | None = None
-    frontMatter: dict[str, any] = {}
+    frontMatter: dict[str, object] = {}
     body: str = fileContent.strip()
 
     if fileContent.strip().startswith("---"):
@@ -140,63 +113,84 @@ def ParseLicenseData(filename: str, fileContent: str) -> dict[str, any] | None:
             frontMatterRaw: str = parts[1].strip()
             body = parts[2].strip()
             try:
+                # Load YAML, allow empty results
                 frontMatter = yaml.safe_load(frontMatterRaw) or {}
                 if not isinstance(frontMatter, dict):
                     print(
                         f"Warning: Front matter in {filename} not a dictionary. Fallback."
                     )
                     frontMatter = {}
-                    match = re.search(
-                        r"spdx-id:\s*([^\n]+)", frontMatterRaw, re.IGNORECASE
-                    )
-                    if match:
-                        spdxId = match.group(1).strip()
-                else:
-                    spdxId = frontMatter.get("spdx-id")
+                # Get SPDX ID from parsed data first
+                spdxId = frontMatter.get("spdx-id")
+
             except yaml.YAMLError as e:
                 print(f"Warning: YAML parse error for {filename}: {e}. Fallback.")
                 frontMatter = {}
+                # Fallback regex search if YAML fails
                 matchSpdx = re.search(
                     r"spdx-id:\s*([^\n]+)", frontMatterRaw, re.IGNORECASE
                 )
                 if matchSpdx:
                     spdxId = matchSpdx.group(1).strip()
+
         else:
             print(f"Warning: Malformed front matter in {filename}.")
+            # Fallback: Guess SPDX ID from filename if needed
             if not spdxId:
                 spdxId = GuessSpdxFromFilename(filename)
     else:
         print(f"Warning: No front matter '---' in {filename}.")
         spdxId = GuessSpdxFromFilename(filename)
 
-    # Ensure basic fields exist in frontMatter for consistency
+    # Final check and fallback for SPDX ID
     if not spdxId and "spdx-id" in frontMatter:
-        spdxId = frontMatter["spdx-id"]  # Get from parsed FM if fallback missed
+        spdxId = frontMatter["spdx-id"]
     if not spdxId:
         print(f"Error: Could not determine SPDX ID for {filename}. Skipping.")
         return None
 
+    # Ensure basic fields exist in frontMatter for consistency
     frontMatter.setdefault("spdx-id", spdxId)
     frontMatter.setdefault("title", spdxId)  # Fallback title
+
+    # Ensure rules lists exist, even if empty, for caching
+    frontMatter.setdefault("permissions", [])
+    frontMatter.setdefault("conditions", [])
+    frontMatter.setdefault("limitations", [])
 
     return {"spdx_id": spdxId, "front_matter": frontMatter, "body": body}
 
 
 def GuessSpdxFromFilename(filename: str) -> str | None:
-    """Guesses SPDX ID from filename."""
-    spdxIdGuess: str = os.path.splitext(filename)[0]  # Keep case initially
-    # Basic check, could be improved (SPDX allows '+')
-    if re.match(r"^[A-Za-z0-9.-]+$", spdxIdGuess):
-        return spdxIdGuess  # Return the guess
+    """Guesses SPDX ID from filename (case-sensitive potential)."""
+    spdxIdGuess: str = os.path.splitext(filename)[0]
+    # Basic check, SPDX allows letters, numbers, ., -, +
+    if re.match(r"^[A-Za-z0-9.\-\+]+$", spdxIdGuess):
+        return spdxIdGuess
     else:
-        print(f"Warning: Could not reliably guess SPDX ID for {filename}")
+        print(
+            f"Warning: Filename {filename} doesn't look like a typical SPDX ID format. Cannot reliably guess."
+        )
+        return None
+
+
+def ParseDataFile(filename: str, fileContent: str) -> object | None:
+    """Parses YAML data file content."""
+    try:
+        data = yaml.safe_load(fileContent)
+        return data
+    except yaml.YAMLError as e:
+        print(f"Error parsing YAML data file {filename}: {e}")
+        return None
+    except Exception as e:
+        print(f"An unexpected error occurred parsing data file: {e}")
         return None
 
 
 # --- Caching Functions ---
 
 
-def LoadCache(cacheFilePath: Path) -> dict[str, dict[str, any]]:
+def LoadCache(cacheFilePath: Path) -> dict[str, object]:
     """Loads the license cache from a JSON file."""
     if cacheFilePath.exists():
         try:
@@ -206,10 +200,14 @@ def LoadCache(cacheFilePath: Path) -> dict[str, dict[str, any]]:
             print(
                 f"Warning: Could not load cache file {cacheFilePath}: {e}. Starting fresh."
             )
+            return {}  # Return empty cache on error
+        except Exception as e:
+            print(f"An unexpected error occurred loading cache: {e}")
+            return {}
     return {}
 
 
-def SaveCache(cacheFilePath: Path, cacheData: dict[str, dict[str, any]]) -> None:
+def SaveCache(cacheFilePath: Path, cacheData: dict[str, object]) -> None:
     """Saves the license cache to a JSON file."""
     try:
         cacheFilePath.parent.mkdir(
@@ -219,115 +217,229 @@ def SaveCache(cacheFilePath: Path, cacheData: dict[str, dict[str, any]]) -> None
             json.dump(cacheData, f, indent=2, sort_keys=True)
     except IOError as e:
         print(f"Error: Could not save cache file {cacheFilePath}: {e}")
+    except Exception as e:
+        print(f"An unexpected error occurred saving cache: {e}")
 
 
 def UpdateAndLoadLicenseCache(
     cacheFilePath: Path, forceRefresh: bool = False
-) -> dict[str, dict[str, any]]:
+) -> dict[str, object]:
     """
-    Loads cache, checks GitHub for updates, fetches necessary files,
-    updates cache, saves cache, and returns the up-to-date license data (basic info).
+    Loads cache, checks GitHub for updates in licenses and data files,
+    fetches necessary files, updates cache, saves cache, and returns the
+    up-to-date cache data (basic license info and data files).
     """
     print("Loading cache...")
-    cachedLicenses = LoadCache(cacheFilePath) if not forceRefresh else {}
+    cachedData = LoadCache(cacheFilePath) if not forceRefresh else {}
     if forceRefresh:
         print("Cache refresh forced.")
 
-    print("Fetching current license list from GitHub...")
-    githubFiles = FetchLicenseListFromApi()
-    if githubFiles is None:
-        print("Error: Failed to fetch list from GitHub. Using potentially stale cache.")
-        return cachedLicenses  # Return whatever we loaded
-
-    currentGithubFiles = {item["name"]: item for item in githubFiles}
-    updatedCache = {}
     needsSave = False
+    processedDataFiles = {}  # Store processed data files separately
 
-    # Process files currently on GitHub
-    filesToFetchContent = []
-    for name, ghInfo in currentGithubFiles.items():
-        cachedEntry = None
-        # Find corresponding cached entry (might need case-insensitive search if keys changed)
-        # For simplicity, assume filename is consistent key reference for now
-        # A more robust way might involve iterating cache keys if spdx id changed
-        for key, val in cachedLicenses.items():
-            if val.get("filename") == name:
-                cachedEntry = val
-                cached_spdx_lower = key
-                break
-
-        gh_sha = ghInfo.get("sha")
-        if not gh_sha:
-            print(
-                f"Warning: No SHA found for {name} from GitHub API. Assuming changed."
-            )
-            filesToFetchContent.append(ghInfo)
-            needsSave = True
-            continue
-
-        if cachedEntry and cachedEntry.get("sha") == gh_sha:
-            # SHA matches, use cached basic info
-            updatedCache[cached_spdx_lower] = cachedEntry
-        else:
-            # New file or changed file, mark for fetching content
-            if cachedEntry:
-                print(f"  Detected change in {name} (SHA mismatch).")
-            else:
-                print(f"  Detected new file {name}.")
-            filesToFetchContent.append(ghInfo)
-            needsSave = True  # Cache will be updated
-
-    # Identify deleted files
-    cachedNames = {
-        entry.get("filename")
-        for entry in cachedLicenses.values()
-        if entry.get("filename")
-    }
-    deletedNames = cachedNames - set(currentGithubFiles.keys())
-    if deletedNames:
-        print(f"  Detected deleted files: {', '.join(deletedNames)}")
-        needsSave = True
-        # The deleted files are implicitly removed as we build updatedCache only from currentGithubFiles
-
-    # Fetch content for new/changed files
-    if filesToFetchContent:
+    # --- Update Data Files (_data/*.yml) ---
+    dataFilesToFetch = []
+    print(f"Fetching current data file list from GitHub ({DATA_PATH})...")
+    githubDataFiles = FetchGithubDirListing(DATA_PATH)
+    if githubDataFiles is None:
         print(
-            f"Fetching content for {len(filesToFetchContent)} new/updated license files..."
+            "Warning: Failed to fetch data file list. Using potentially stale cached data."
         )
-        for ghInfo in filesToFetchContent:
+        # Extract existing data files from cache if possible
+        for key, val in cachedData.items():
+            if key.startswith("data:"):
+                processedDataFiles[key] = val
+    else:
+        currentGithubDataFiles = {
+            item["name"]: item
+            for item in githubDataFiles
+            if isinstance(item, dict)
+            and item.get("type") == "file"
+            and item.get("name").endswith(".yml")
+        }
+
+        for name, ghInfo in currentGithubDataFiles.items():
+            cacheKey = f"data:{name}"
+            cachedEntry = cachedData.get(cacheKey)
+            gh_sha = ghInfo.get("sha")
+            if not gh_sha:
+                print(f"Warning: No SHA for data file {name}. Assuming changed.")
+                dataFilesToFetch.append(ghInfo)
+                needsSave = True
+                continue
+
+            if (
+                cachedEntry
+                and isinstance(cachedEntry, dict)
+                and cachedEntry.get("sha") == gh_sha
+            ):
+                # SHA matches, use cached data file content
+                processedDataFiles[cacheKey] = cachedEntry
+            else:
+                # New or changed data file
+                if cachedEntry:
+                    print(f"  Detected change in data file {name} (SHA mismatch).")
+                else:
+                    print(f"  Detected new data file {name}.")
+                dataFilesToFetch.append(ghInfo)
+                needsSave = True
+
+        # Identify deleted data files
+        cachedDataFilenames = {
+            k.split(":", 1)[1] for k in cachedData.keys() if k.startswith("data:")
+        }
+        deletedDataFilenames = cachedDataFilenames - set(currentGithubDataFiles.keys())
+        if deletedDataFilenames:
+            print(f"  Detected deleted data files: {', '.join(deletedDataFilenames)}")
+            # No need to explicitly remove, they just won't be added to processedDataFiles
+            needsSave = True
+
+    # Fetch content for new/changed data files
+    if dataFilesToFetch:
+        print(f"Fetching content for {len(dataFilesToFetch)} new/updated data files...")
+        for ghInfo in dataFilesToFetch:
             print(f"  Fetching {ghInfo['name']}...")
-            content = FetchLicenseContent(ghInfo["download_url"])
+            content = FetchFileContent(ghInfo["download_url"])
             if content:
-                parsedData = ParseLicenseData(ghInfo["name"], content)
-                if parsedData:
-                    # Store basic info + filename + sha in cache
-                    spdx_lower = parsedData["spdx_id"].lower()
-                    updatedCache[spdx_lower] = {
-                        "spdx_id": parsedData["spdx_id"],
-                        "title": parsedData["front_matter"].get(
-                            "title", parsedData["spdx_id"]
-                        ),
-                        "filename": ghInfo["name"],
-                        "sha": ghInfo.get("sha", ""),  # Store the new SHA
-                        # DO NOT store 'body' or full 'front_matter' in the main cache
+                parsedData = ParseDataFile(ghInfo["name"], content)
+                if parsedData is not None:
+                    # Store parsed data and SHA in cache
+                    processedDataFiles[f'data:{ghInfo["name"]}'] = {
+                        "sha": ghInfo.get("sha", ""),
+                        "content": parsedData,  # Store the parsed YAML data
                     }
             else:
-                print(
-                    f"  Failed to fetch/parse {ghInfo['name']}. It won't be in the updated cache."
-                )
-                # If it was previously cached, it might be removed implicitly
-                # Or explicitly remove if needed: updatedCache.pop(cached_spdx_lower, None)
+                print(f"  Failed to fetch/parse data file {ghInfo['name']}.")
+
+    # --- Update License Files (_licenses/*.txt) ---
+    licenseFilesToFetch = []
+    print(f"\nFetching current license file list from GitHub ({LICENSES_PATH})...")
+    githubLicenseFiles = FetchGithubDirListing(LICENSES_PATH)
+    processedLicenses = {}  # Store processed license files separately
+
+    if githubLicenseFiles is None:
+        print(
+            "Warning: Failed to fetch license file list. Using potentially stale cached licenses."
+        )
+        for key, val in cachedData.items():
+            if not key.startswith("data:"):
+                processedLicenses[key] = val  # Keep existing license entries
+    else:
+        currentGithubLicenseFiles = {
+            item["name"]: item for item in githubLicenseFiles if isinstance(item, dict)
+        }
+
+        for name, ghInfo in currentGithubLicenseFiles.items():
+            if not name.endswith(".txt"):
+                continue  # Skip non-txt files
+
+            cachedEntry = None
+            cached_spdx_lower = None
+            # Find corresponding cached entry by filename
+            for key, val in cachedData.items():
+                if (
+                    not key.startswith("data:")
+                    and isinstance(val, dict)
+                    and val.get("filename") == name
+                ):
+                    cachedEntry = val
+                    cached_spdx_lower = key
+                    break
+
+            gh_sha = ghInfo.get("sha")
+            if not gh_sha:
+                print(f"Warning: No SHA for license file {name}. Assuming changed.")
+                licenseFilesToFetch.append(ghInfo)
+                needsSave = True
+                continue
+
+            if cachedEntry and cachedEntry.get("sha") == gh_sha:
+                # SHA matches, use cached basic info
+                # Make sure the key is correct by checking spdx_id
+                spdx_id_in_cache = cachedEntry.get("spdx_id")
+                if spdx_id_in_cache and spdx_id_in_cache.lower() != cached_spdx_lower:
+                    print(f"  SPDX ID mismatch for cached {name}. Updating key.")
+                    processedLicenses[spdx_id_in_cache.lower()] = cachedEntry
+                    needsSave = True  # Need to save cache with corrected key
+                else:
+                    processedLicenses[cached_spdx_lower] = cachedEntry
+            else:
+                # New file or changed file, mark for fetching content
+                if cachedEntry:
+                    print(f"  Detected change in {name} (SHA mismatch).")
+                else:
+                    print(f"  Detected new file {name}.")
+                licenseFilesToFetch.append(ghInfo)
+                needsSave = True  # Cache will be updated
+
+        # Identify deleted license files
+        cachedLicenseFilenames = {
+            entry.get("filename")
+            for key, entry in cachedData.items()
+            if not key.startswith("data:")
+            and isinstance(entry, dict)
+            and entry.get("filename")
+        }
+        deletedLicenseFilenames = cachedLicenseFilenames - set(
+            currentGithubLicenseFiles.keys()
+        )
+        if deletedLicenseFilenames:
+            print(
+                f"  Detected deleted license files: {', '.join(deletedLicenseFilenames)}"
+            )
+            # No need to explicitly remove, they just won't be added to processedLicenses
+            needsSave = True
+
+    # Fetch content for new/changed license files
+    if licenseFilesToFetch:
+        print(
+            f"Fetching content for {len(licenseFilesToFetch)} new/updated license files..."
+        )
+        for ghInfo in licenseFilesToFetch:
+            print(f"  Fetching {ghInfo['name']}...")
+            content = FetchFileContent(ghInfo["download_url"])
+            if content:
+                parsedData = ParseLicenseFile(ghInfo["name"], content)
+                if parsedData:
+                    spdx_lower = parsedData["spdx_id"].lower()
+                    # Store basic info from front matter + filename + sha + full content
+                    fm = parsedData["front_matter"]
+                    processedLicenses[spdx_lower] = {
+                        "spdx_id": parsedData["spdx_id"],
+                        "title": fm.get("title", parsedData["spdx_id"]),
+                        "filename": ghInfo["name"],
+                        "sha": ghInfo.get("sha", ""),
+                        "nickname": fm.get("nickname"),  # Store for detailed list
+                        "description": fm.get("description"),  # Store for detailed list
+                        "permissions": fm.get(
+                            "permissions", []
+                        ),  # Store for detailed list
+                        "conditions": fm.get(
+                            "conditions", []
+                        ),  # Store for detailed list
+                        "limitations": fm.get(
+                            "limitations", []
+                        ),  # Store for detailed list
+                        "file_content_cached": content,  # Cache the full file content
+                    }
+                else:
+                    print(f"  Failed to parse license file {ghInfo['name']}. Skipping.")
+            else:
+                print(f"  Failed to fetch content for {ghInfo['name']}.")
+
+    # Combine updated data file cache with updated license cache
+    finalCacheData = {**processedDataFiles, **processedLicenses}
 
     if needsSave:
         print("Saving updated cache...")
-        SaveCache(cacheFilePath, updatedCache)
+        SaveCache(cacheFilePath, finalCacheData)
     else:
         print("Cache is up-to-date.")
 
-    return updatedCache
+    return finalCacheData
 
 
-# --- Display and Filling Functions (Unchanged except DisplayLicenseInfo needs fetch) ---
+# --- Display and Filling Functions ---
 
 
 def FindPlaceholders(templateBody: str) -> set[str]:
@@ -346,15 +458,16 @@ def FillLicenseTemplate(templateBody: str, replacements: dict[str, str]) -> str:
     return filledText
 
 
-def ListLicenses(licensesData: dict[str, dict[str, any]]) -> None:
-    """Prints a list of available licenses from cached data."""
-    if not licensesData:
+def ListLicenses(licensesData: dict[str, object]) -> None:
+    """Prints a simple list of available licenses from cached data."""
+    licenseKeys = [k for k in licensesData.keys() if not k.startswith("data:")]
+    if not licenseKeys:
         print("No licenses found in cache.")
         return
     print("\nAvailable Licenses (SPDX ID: Title):")
     print("-" * 50)
-    sortedIds: list[str] = sorted(licensesData.keys())
-    for spdxLower in sortedIds:
+    sortedKeys: list[str] = sorted(licenseKeys)
+    for spdxLower in sortedKeys:
         data = licensesData[spdxLower]
         spdx: str = data.get("spdx_id", "N/A")
         title: str = data.get("title", "N/A")
@@ -362,110 +475,285 @@ def ListLicenses(licensesData: dict[str, dict[str, any]]) -> None:
     print("-" * 50)
 
 
-def DisplayLicenseInfo(
-    spdxIdLower: str, licensesData: dict[str, dict[str, any]]
-) -> None:
-    """Fetches full data if needed and prints formatted metadata."""
+def PrintDetailedList(licensesData: dict[str, object]) -> None:
+    """Prints a detailed list of licenses using cached basic info."""
+    licenseKeys = [k for k in licensesData.keys() if not k.startswith("data:")]
+    if not licenseKeys:
+        print("No licenses found in cache.")
+        return
+
+    print("\n--- Detailed License List (from cache) ---")
+    sortedKeys: list[str] = sorted(licenseKeys)
+    for spdxLower in sortedKeys:
+        data = licensesData[spdxLower]
+        spdx: str = data.get("spdx_id", "N/A")
+        title: str = data.get("title", "N/A")
+        nickname: str = data.get("nickname", "N/A")
+        description: str = data.get("description", "No description available.")
+        perms_count = len(data.get("permissions", []))
+        conds_count = len(data.get("conditions", []))
+        lims_count = len(data.get("limitations", []))
+
+        print(f"\nSPDX ID: {spdx}")
+        print(f"Title: {title}")
+        if nickname and nickname != "N/A":
+            print(f"Nickname: {nickname}")
+        # Truncate description for list view
+        truncated_desc = textwrap.shorten(description, width=70, placeholder="...")
+        print(f"Description: {truncated_desc}")
+        print(
+            f"Rules: Permissions ({perms_count}), Conditions ({conds_count}), Limitations ({lims_count})"
+        )
+        print("---")
+
+
+def GetFullLicenseData(
+    spdxIdLower: str, licensesData: dict[str, object]
+) -> dict[str, object] | None:
+    """Retrieves full license data, fetching from GitHub if not fully cached."""
     basicInfo = licensesData.get(spdxIdLower)
     if not basicInfo:
         print(f"Error: Basic info for {spdxIdLower.upper()} not found in cache.")
-        return
+        return None
 
-    filename = basicInfo.get("filename")
-    if not filename:
-        print(f"Error: Filename missing for {spdxIdLower.upper()} in cache.")
-        return
+    content = basicInfo.get("file_content_cached")
+    fullLicenseData = None
 
-    # Construct download URL (needs path, which isn't cached - fetch list again or store path)
-    # Let's refetch the list briefly to get the download URL - slightly inefficient but simple
-    print(f"Fetching download URL for {filename}...")
-    githubFiles = FetchLicenseListFromApi()  # Re-fetch list to get current URLs
-    downloadUrl = None
-    if githubFiles:
-        for item in githubFiles:
-            if item.get("name") == filename:
-                downloadUrl = item.get("download_url")
-                break
-
-    if not downloadUrl:
-        print(
-            f"Error: Could not find download URL for {filename}. Cannot fetch full info."
+    if content:
+        # print(f"Using cached content for {basicInfo.get('filename', spdxIdLower.upper())}.")
+        fullLicenseData = ParseLicenseFile(
+            basicInfo.get("filename", "unknown"), content
         )
-        return
+        if not fullLicenseData:
+            print(
+                f"Warning: Failed to parse cached content for {basicInfo.get('filename', spdxIdLower.upper())}. Re-fetching."
+            )
+            content = None  # Force re-fetch
 
-    print(f"Fetching full content for {filename}...")
-    content = FetchLicenseContent(downloadUrl)
-    if not content:
-        print(f"Error: Failed to fetch full content for {filename}.")
-        return
+    if not content:  # Need to fetch
+        filename = basicInfo.get("filename")
+        if not filename:
+            print(
+                f"Error: Filename missing for {spdxIdLower.upper()} in cache. Cannot fetch full info."
+            )
+            return None
 
-    fullLicenseData = ParseLicenseData(filename, content)
+        print(f"Fetching full content for {filename} from GitHub...")
+        # Need download URL - fetch list briefly or store it? Assume cache is recent enough for now.
+        # Let's fetch the list again if needed - suboptimal.
+        # TODO: Add download_url to cached basic info in UpdateAndLoadLicenseCache
+        githubFiles = FetchGithubDirListing(LICENSES_PATH)
+        downloadUrl = None
+        if githubFiles:
+            for item in githubFiles:
+                if item.get("name") == filename:
+                    downloadUrl = item.get("download_url")
+                    break
+        if not downloadUrl:
+            print(
+                f"Error: Could not find download URL for {filename}. Cannot fetch content."
+            )
+            return None
+
+        content = FetchFileContent(downloadUrl)
+        if content:
+            fullLicenseData = ParseLicenseFile(filename, content)
+            # Optionally update the cache with this fetched content here?
+            # licensesData[spdxIdLower]['file_content_cached'] = content
+            # licensesData[spdxIdLower]['sha'] = new_sha # Need SHA from listing
+        else:
+            print(f"Error: Failed to fetch content for {filename}.")
+            return None
+
     if not fullLicenseData:
-        print(f"Error: Failed to parse full content for {filename}.")
-        return
+        print(f"Error: Failed to get full license data for {spdxIdLower.upper()}.")
+        return None
 
-    # Now display using the fetched full data
-    fm: dict[str, any] = fullLicenseData.get("front_matter", {})
+    return fullLicenseData
+
+
+def DisplayLicenseInfo(spdxIdLower: str, licensesData: dict[str, object]) -> None:
+    """Prints the formatted metadata for a license using GetFullLicenseData."""
+    fullLicenseData = GetFullLicenseData(spdxIdLower, licensesData)
+    if not fullLicenseData:
+        return  # Error message already printed
+
+    fm: dict[str, object] = fullLicenseData.get("front_matter", {})
     spdxId: str = fullLicenseData.get("spdx_id", "N/A")
     title: str = fm.get("title", "N/A")
+    body = fullLicenseData.get("body", "")
+
+    # Load rules and fields data from cache
+    rulesData = licensesData.get("data:rules.yml", {}).get("content", {})
+    fieldsDataList = licensesData.get("data:fields.yml", {}).get("content", [])
+    fieldsData = {
+        item["name"]: item
+        for item in fieldsDataList
+        if isinstance(item, dict) and item.get("name")
+    }  # Convert list to dict
 
     print(f"\n--- License Information: {title} ({spdxId}) ---")
 
     if fm.get("nickname"):
         print(f"\nNickname: {fm['nickname']}")
-    if fm.get("description"):
-        print("\nDescription:")
-        print(
-            textwrap.fill(
-                fm["description"], width=78, initial_indent="  ", subsequent_indent="  "
-            )
-        )
-    if fm.get("how"):
-        print("\nHow to Apply:")
-        print(
-            textwrap.fill(
-                fm["how"], width=78, initial_indent="  ", subsequent_indent="  "
-            )
-        )
 
-    def PrintRules(label: str, key: str) -> None:
-        if fm.get(key) and isinstance(fm[key], list):
+    def PrintTextBlock(label: str, text: str | None) -> None:
+        if text:
             print(f"\n{label}:")
-            for item in fm[key]:
-                print(f"  - {item}")
+            print(
+                textwrap.fill(
+                    text, width=78, initial_indent="  ", subsequent_indent="  "
+                )
+            )
 
-    PrintRules("Permissions", "permissions")
-    PrintRules("Conditions", "conditions")
-    PrintRules("Limitations", "limitations")
+    PrintTextBlock("Description", fm.get("description"))
+    PrintTextBlock("How to Apply", fm.get("how"))
+
+    def PrintRulesWithLabels(label: str, key: str, rulesConfig: dict) -> None:
+        ruleTags = fm.get(key, [])
+        configRules = rulesConfig.get(key, [])
+        configRulesMap = {
+            rule.get("tag"): rule
+            for rule in configRules
+            if isinstance(rule, dict) and rule.get("tag")
+        }
+        if ruleTags and isinstance(ruleTags, list):
+            print(f"\n{label}:")
+            for tag in ruleTags:
+                ruleInfo = configRulesMap.get(tag)
+                if ruleInfo and ruleInfo.get("label"):
+                    print(f"  - {ruleInfo['label']}")
+                else:
+                    print(f"  - {tag} (Label not found in rules.yml)")
+        # else: print(f"\n{label}: (None specified)") # Option to show empty sections
+
+    PrintRulesWithLabels("Permissions", "permissions", rulesData)
+    PrintRulesWithLabels("Conditions", "conditions", rulesData)
+    PrintRulesWithLabels("Limitations", "limitations", rulesData)
 
     if fm.get("using") and isinstance(fm["using"], dict):
         print("\nNotable Projects Using This License:")
         for project, url in fm["using"].items():
             print(f"  - {project}: {url}")
 
-    if fm.get("note"):
-        print("\nNote:")
-        print(
-            textwrap.fill(
-                fm["note"], width=78, initial_indent="  ", subsequent_indent="  "
-            )
-        )
+    PrintTextBlock("Note", fm.get("note"))
 
-    placeholders = FindPlaceholders(fullLicenseData.get("body", ""))
+    placeholders = FindPlaceholders(body)
     if placeholders:
         print("\nPlaceholders in Body:")
         for ph in sorted(list(placeholders)):
-            argSuggestion: str = PLACEHOLDER_TO_ARG_MAP.get(
-                ph.lower(), f"(no direct argument for '[{ph}]')"
+            ph_lower = ph.lower()
+            fieldInfo = fieldsData.get(ph_lower)
+            description = (
+                fieldInfo.get("description", "No description available")
+                if fieldInfo
+                else "No description available"
             )
-            defaultInfo: str = ""
-            if ph.lower() in ["year", "yyyy"]:
+            argSuggestion = PLACEHOLDER_TO_ARG_MAP.get(
+                ph_lower, f"(no direct argument for '[{ph}]')"
+            )
+            defaultInfo = ""
+            if ph_lower in ["year", "yyyy"]:
                 defaultInfo = " (defaults to current year)"
-            print(f"  - [{ph}] (Argument: {argSuggestion}{defaultInfo})")
+            print(f"  - [{ph}]")
+            print(f"    Description: {description}")
+            print(f"    Argument: {argSuggestion}{defaultInfo}")
     else:
         print("\nPlaceholders in Body: (None detected)")
 
     print("\n--- End License Information ---")
+
+
+def CompareLicenses(spdxIdsLower: list[str], licensesData: dict[str, object]) -> None:
+    """Compares licenses based on rules."""
+    if len(spdxIdsLower) < 2:
+        print("\nError: Need at least two license SPDX IDs to compare.")
+        return
+
+    licensesToCompare = []
+    for spdxLower in spdxIdsLower:
+        fullLicenseData = GetFullLicenseData(spdxLower, licensesData)
+        if fullLicenseData:
+            licensesToCompare.append(fullLicenseData)
+        else:
+            print(f"Could not get data for {spdxLower.upper()}, skipping.")
+
+    if len(licensesToCompare) < 2:
+        print("\nCannot perform comparison: Need at least two valid licenses.")
+        return
+
+    # Load rules data from cache
+    rulesData = licensesData.get("data:rules.yml", {}).get("content", {})
+    rulesMap = {}
+    for category in ["permissions", "conditions", "limitations"]:
+        rulesMap[category] = {
+            rule.get("tag"): rule
+            for rule in rulesData.get(category, [])
+            if isinstance(rule, dict) and rule.get("tag")
+        }
+
+    print("\n--- Comparing Licenses ---")
+    licenseSpdxIds = [lic["spdx_id"] for lic in licensesToCompare]
+    print("Comparing:", ", ".join(licenseSpdxIds))
+
+    # Collect all unique rule tags across all licenses being compared
+    allRuleTags = set()
+    for lic in licensesToCompare:
+        fm = lic.get("front_matter", {})
+        for cat in ["permissions", "conditions", "limitations"]:
+            allRuleTags.update(
+                fm.get(cat, [])
+            )  # Ensure update works on potentially missing keys
+
+    # Separate tags by category using rulesMap
+    tagsByCategory = {
+        "permissions": sorted(
+            [tag for tag in allRuleTags if tag in rulesMap.get("permissions", {})]
+        ),
+        "conditions": sorted(
+            [tag for tag in allRuleTags if tag in rulesMap.get("conditions", {})]
+        ),
+        "limitations": sorted(
+            [tag for tag in allRuleTags if tag in rulesMap.get("limitations", {})]
+        ),
+    }
+
+    # Determine max label width for alignment
+    maxLabelWidth = 0
+    for category_tags in tagsByCategory.values():
+        for tag in category_tags:
+            ruleInfo = None
+            for cat in rulesMap:  # Check all categories for the tag
+                if tag in rulesMap[cat]:
+                    ruleInfo = rulesMap[cat][tag]
+                    break
+            if ruleInfo and ruleInfo.get("label"):
+                maxLabelWidth = max(maxLabelWidth, len(ruleInfo["label"]))
+        maxLabelWidth = max(maxLabelWidth, 25)  # Ensure minimum width
+
+    # Print comparison by rule category
+    for category in ["permissions", "conditions", "limitations"]:
+        ruleTags = tagsByCategory[category]
+        if not ruleTags:
+            continue  # Skip category if no relevant rules
+
+        print(f"\n{category.capitalize()}:")
+        for tag in ruleTags:
+            ruleInfo = rulesMap.get(category, {}).get(tag)
+            label = (
+                ruleInfo.get("label", tag) if ruleInfo else tag
+            )  # Use tag as fallback label
+
+            line = f"  {label:<{maxLabelWidth}} : "
+            indicators = []
+            for lic in licensesToCompare:
+                fm = lic.get("front_matter", {})
+                hasRule = tag in fm.get(category, [])
+                indicators.append(f"{lic['spdx_id']}: {'✓' if hasRule else 'X'}")
+            line += " | ".join(indicators)
+            print(line)
+
+    print("\n--- End Comparison ---")
 
 
 # --- Main Execution ---
@@ -473,26 +761,32 @@ def DisplayLicenseInfo(
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Fetch, display info for, or fill open source license templates from github/choosealicense.com using local caching.",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""Examples:
-  %(prog)s --list                      List all available licenses (uses cache).
-  %(prog)s --refresh --list            Force refresh cache then list licenses.
-  %(prog)s --info MIT                  Show detailed info (fetches full content).
-  %(prog)s --show-placeholders NCSA    Show placeholders (fetches full content).
-  %(prog)s --license MIT -f "Jane Doe" Fill license (fetches full content).
-  %(prog)s -l Apache-2.0 -f ACME -o LIC Fill license, output to file LIC (fetches full content).
-""",
+        description="Fetch, display info for, compare, or fill open source license templates from github/choosealicense.com using local caching.",
+        formatter_class=argparse.RawTextHelpFormatter,  # Use RawText to better control epilog formatting
+        epilog=textwrap.dedent(
+            """\
+Examples:
+  %(prog)s --list                           List all available licenses (uses cache).
+  %(prog)s --detailed-list                  List licenses with key details (uses cache).
+  %(prog)s --refresh --list                 Force refresh cache then list licenses.
+  %(prog)s --info MIT                       Show detailed info (fetches full content if needed).
+  %(prog)s --show-placeholders NCSA         Show placeholders (fetches full content if needed).
+  %(prog)s --compare MIT Apache-2.0 GPL-3.0 Compare licenses (fetches full content if needed).
+  %(prog)s --license MIT -f "Jane Doe"      Fill license (fetches full content if needed).
+  %(prog)s -l Apache-2.0 -f ACME -o LIC     Fill license, output to file LIC (fetches full content if needed).
+"""
+        ),
     )
 
     parser.add_argument(
         "--refresh",
         action="store_true",
-        help="Force refresh of the local license cache from GitHub.",
+        help="Force refresh of the local license and data cache from GitHub.",
     )
     parser.add_argument(
         "--cache-file",
-        default=CACHE_FILENAME,
+        type=Path,  # Use Path for type hint
+        default=Path(CACHE_FILENAME),  # Use Path for default
         help=f"Path to the license cache file (default: {CACHE_FILENAME}).",
     )
 
@@ -508,14 +802,25 @@ def main() -> int:
         help="List available licenses from cache and exit.",
     )
     actionGroup.add_argument(
+        "--detailed-list",
+        action="store_true",
+        help="List licenses with key details from cache and exit.",
+    )
+    actionGroup.add_argument(
         "--info",
         metavar="LICENSE_ID",
-        help="Show detailed metadata (fetches full content).",
+        help="Show detailed metadata (fetches full content if needed).",
     )
     actionGroup.add_argument(
         "--show-placeholders",
         metavar="LICENSE_ID",
-        help="Show placeholders (fetches full content).",
+        help="Show placeholders (fetches full content if needed).",
+    )
+    actionGroup.add_argument(
+        "--compare",
+        nargs="+",
+        metavar="LICENSE_ID",
+        help="Compare the specified licenses based on rules and metadata.",
     )
 
     fillGroup = parser.add_argument_group(
@@ -535,9 +840,9 @@ def main() -> int:
     )
 
     args = parser.parse_args()
-    cacheFilePath = Path(args.cache_file)
+    cacheFilePath = args.cache_file  # Already a Path object
 
-    # Update cache if needed, then load basic license info
+    # Update cache if needed, then load basic license info AND data files
     licensesData = UpdateAndLoadLicenseCache(cacheFilePath, args.refresh)
     if not licensesData:
         print("\nOperation failed: Could not load or update license data.")
@@ -549,54 +854,38 @@ def main() -> int:
         ListLicenses(licensesData)
         return 0
 
+    if args.detailed_list:
+        PrintDetailedList(licensesData)
+        return 0
+
     if args.info:
         requestedIdLower: str = args.info.lower()
-        if requestedIdLower not in licensesData:
+        if not licensesData.get(requestedIdLower):  # Check cache first
             print(f"\nError: License '{args.info}' not found in cache.")
             print("Use --list to see available licenses or --refresh to update cache.")
             return 1
         DisplayLicenseInfo(
             requestedIdLower, licensesData
-        )  # Fetches full content inside
+        )  # Fetches full content inside if needed
         return 0
 
     if args.show_placeholders:
         requestedIdLower = args.show_placeholders.lower()
-        basicInfo = licensesData.get(requestedIdLower)
-        if not basicInfo:
-            print(f"\nError: License '{args.show_placeholders}' not found in cache.")
-            print("Use --list or --refresh.")
-            return 1
-
-        filename = basicInfo.get("filename")
-        if not filename:
-            print(f"Error: Filename missing for {requestedIdLower.upper()} in cache.")
-            return 1
-
-        # Fetch full content to find placeholders accurately
-        print(f"Fetching download URL for {filename}...")
-        githubFiles = FetchLicenseListFromApi()
-        downloadUrl = None
-        if githubFiles:
-            for item in githubFiles:
-                if item.get("name") == filename:
-                    downloadUrl = item.get("download_url")
-                    break
-        if not downloadUrl:
-            print(
-                f"Error: Could not find download URL for {filename}. Cannot fetch body."
-            )
-            return 1
-
-        print(f"Fetching full content for {filename} to find placeholders...")
-        content = FetchLicenseContent(downloadUrl)
-        if not content:
-            print(f"Error: Failed to fetch full content for {filename}.")
-            return 1
-        fullLicenseData = ParseLicenseData(filename, content)  # Parse again to get body
+        fullLicenseData = GetFullLicenseData(
+            requestedIdLower, licensesData
+        )  # Needs full body
         if not fullLicenseData:
-            print(f"Error: Failed to parse full content for {filename}.")
-            return 1
+            return 1  # Error message already printed
+
+        basicInfo = licensesData.get(
+            requestedIdLower, {}
+        )  # Get basic info for title/spdx display
+        fieldsDataList = licensesData.get("data:fields.yml", {}).get("content", [])
+        fieldsData = {
+            item["name"]: item
+            for item in fieldsDataList
+            if isinstance(item, dict) and item.get("name")
+        }
 
         print(
             f"\nPlaceholders for {basicInfo.get('title','N/A')} ({basicInfo.get('spdx_id','N/A')}):"
@@ -606,54 +895,53 @@ def main() -> int:
             print("  (No standard [placeholder] patterns found)")
         else:
             for ph in sorted(list(placeholders)):
+                ph_lower = ph.lower()
+                fieldInfo = fieldsData.get(ph_lower)
+                description = (
+                    fieldInfo.get("description", "No description available")
+                    if fieldInfo
+                    else "No description available"
+                )
                 argSuggestion = PLACEHOLDER_TO_ARG_MAP.get(
-                    ph.lower(), f"(no direct argument for '[{ph}]')"
+                    ph_lower, f"(no direct argument for '[{ph}]')"
                 )
                 defaultInfo = ""
-                if ph.lower() in ["year", "yyyy"]:
+                if ph_lower in ["year", "yyyy"]:
                     defaultInfo = " (defaults to current year if not provided)"
-                print(f"  - [{ph}]  --> Use argument: {argSuggestion}{defaultInfo}")
+                print(f"  - [{ph}]")
+                print(f"    Description: {description}")
+                print(f"    Argument: {argSuggestion}{defaultInfo}")
+        return 0
+
+    if args.compare:
+        spdxIdsToCompare = [id.lower() for id in args.compare]
+        # Check if all requested licenses are in the cache first (basic info)
+        allFoundInCache = True
+        for spdxLower in spdxIdsToCompare:
+            if spdxLower not in licensesData:
+                print(
+                    f"\nError: License '{spdxLower.upper()}' not found in cache. Cannot compare."
+                )
+                print(
+                    "Use --list to see available licenses or --refresh to update cache."
+                )
+                allFoundInCache = False
+                break
+        if not allFoundInCache:
+            return 1
+
+        CompareLicenses(
+            spdxIdsToCompare, licensesData
+        )  # Fetches full content inside if needed
         return 0
 
     if args.license:
         requestedLicenseIdLower: str = args.license.lower()
-        basicInfo = licensesData.get(requestedLicenseIdLower)
-        if not basicInfo:
-            print(f"\nError: License '{args.license}' not found in cache.")
-            print("Use --list or --refresh.")
-            return 1
-
-        filename = basicInfo.get("filename")
-        if not filename:
-            print(
-                f"Error: Filename missing for {requestedLicenseIdLower.upper()} in cache."
-            )
-            return 1
-
-        # Fetch full content for filling
-        print(f"Fetching download URL for {filename}...")
-        githubFiles = FetchLicenseListFromApi()
-        downloadUrl = None
-        if githubFiles:
-            for item in githubFiles:
-                if item.get("name") == filename:
-                    downloadUrl = item.get("download_url")
-                    break
-        if not downloadUrl:
-            print(
-                f"Error: Could not find download URL for {filename}. Cannot fetch body."
-            )
-            return 1
-
-        print(f"Fetching full content for {filename} to fill template...")
-        content = FetchLicenseContent(downloadUrl)
-        if not content:
-            print(f"Error: Failed to fetch full content for {filename}.")
-            return 1
-        fullLicenseData = ParseLicenseData(filename, content)
+        fullLicenseData = GetFullLicenseData(
+            requestedLicenseIdLower, licensesData
+        )  # Needs full body
         if not fullLicenseData:
-            print(f"Error: Failed to parse full content for {filename}.")
-            return 1
+            return 1  # Error message already printed
 
         title: str = fullLicenseData.get("front_matter", {}).get("title", "N/A")
         spdxId: str = fullLicenseData.get("spdx_id", "N/A")
@@ -661,7 +949,7 @@ def main() -> int:
 
         print(f"\nUsing license: {title} ({spdxId})")
 
-        # --- Prepare replacements (Same as before) ---
+        # --- Prepare replacements ---
         currentYear: str = str(datetime.now().year)
         replacements: dict[str, str] = {}
         defaultYear: str = args.year if args.year else currentYear
@@ -677,26 +965,41 @@ def main() -> int:
         if args.projecturl:
             replacements["projecturl"] = args.projecturl
 
-        # --- Check Placeholders (Same as before) ---
+        # --- Check Placeholders ---
+        fieldsDataList = licensesData.get("data:fields.yml", {}).get("content", [])
+        fieldsData = {
+            item["name"]: item
+            for item in fieldsDataList
+            if isinstance(item, dict) and item.get("name")
+        }
+
         foundPlaceholders = FindPlaceholders(body)
         missingArgs: bool = False
         print("Checking required placeholders:")
         for ph in foundPlaceholders:
-            phCheckKey: str = ph.lower()
+            ph_lower = ph.lower()
+            phCheckKey: str = ph_lower
             if phCheckKey == "yyyy":
                 phCheckKey = "year"
             if phCheckKey == "name of copyright owner":
                 phCheckKey = "fullname"
+
             if phCheckKey not in replacements:
-                argSuggestion: str = PLACEHOLDER_TO_ARG_MAP.get(ph.lower(), f"'[{ph}]'")
+                argSuggestion: str = PLACEHOLDER_TO_ARG_MAP.get(ph_lower, f"'[{ph}]'")
+                fieldInfo = fieldsData.get(ph_lower)
+                description = (
+                    fieldInfo.get("description", "No description available")
+                    if fieldInfo
+                    else "No description available"
+                )
                 print(
-                    f"  Warning: Placeholder [{ph}] found, but no value provided via {argSuggestion}."
+                    f"  Warning: Placeholder [{ph}] ({description}) found, but no value provided via {argSuggestion}."
                 )
                 missingArgs = True
         if missingArgs:
             print("  License generated, but placeholders might remain unfilled.")
 
-        # --- Fill and Output (Same as before) ---
+        # --- Fill and Output ---
         filledLicense: str = FillLicenseTemplate(body, replacements)
         if args.output:
             try:
@@ -715,7 +1018,7 @@ def main() -> int:
 
     # If no action argument was given
     print(
-        "\nError: No action specified. Use --list, --info, --show-placeholders, or --license."
+        "\nError: No action specified. Use --list, --detailed-list, --info, --show-placeholders, --compare, or --license."
     )
     parser.print_help()
     return 1
