@@ -47,7 +47,7 @@ async fn main() -> Result<(), AppError> {
 
     }
 
-    let cache_file_path = cli_args.cacheFile.unwrap_or_else(|| {
+    let cache_file_path = cli_args.cacheFile.clone().unwrap_or_else(|| {
         // Attempt to construct a default path, e.g., in user's config directory
         let home_dir = dirs::home_dir().unwrap_or_else(|| std::path::PathBuf::from("."));
         home_dir.join(DEFAULT_CACHE_FILENAME)

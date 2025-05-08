@@ -379,7 +379,7 @@ pub fn PrintFindResults(matches: &[&LicenseEntry], requireTags: &[String], disal
 
 pub fn DisplayLicenseSummaryAfterWrite(
     licenseEntry: &LicenseEntry,
-    cache: &Cache,
+    _cache: &Cache,
     outputPath: &Path,
     userProvidedForFilling: &std::collections::HashMap<String, String>,
     cachedPlaceholdersAtStart: &std::collections::HashMap<String, String>,

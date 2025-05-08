@@ -36,21 +36,21 @@ pub fn ParseLicenseFile(
 
         else {
 
-            if unsafe { crate::main::VERBOSE } {
+            if unsafe { crate::VERBOSE } {
                 eprintln!("[Parse] No YAML front matter found in {}", filename);
             }
 
             FrontMatter::default()
         };
 
-    let spdxId = match frontMatter.spdx_id.as_deref() {
+    let spdxId = match frontMatter.spdxId.as_deref() {
         Some(id) if !id.trim().is_empty() => id.trim().to_string(),
         _ => GuessSpdxFromFilename(filename)
             .ok_or_else(|| ParseError::MissingSpdxId(filename.to_string()))?,
     };
 
-    if frontMatter.spdx_id.is_none() || frontMatter.spdx_id.as_deref().unwrap_or("").trim().is_empty() {
-        frontMatter.spdx_id = Some(spdxId.clone());
+    if frontMatter.spdxId.is_none() || frontMatter.spdxId.as_deref().unwrap_or("").trim().is_empty() {
+        frontMatter.spdxId = Some(spdxId.clone());
     }
 
     if frontMatter.title.is_none() || frontMatter.title.as_deref().unwrap_or("").trim().is_empty() {
@@ -72,7 +72,7 @@ pub fn GuessSpdxFromFilename(filename: &str) -> Option<String> {
 
     else {
 
-        if unsafe { crate::main::VERBOSE } {
+        if unsafe { crate::VERBOSE } {
             eprintln!("[Parse] Filename stem '{}' from '{}' does not look like an SPDX ID.", namePart, filename);
         }
 
@@ -172,9 +172,9 @@ pub fn BuildInfoComponents(
 ) -> InfoComponents {
 
     InfoComponents {
-        how_to_apply_text: fm.how.clone(),
-        note_text: fm.note.clone(),
-        using_info: fm.using.clone(),
+        howToApplyText: fm.how.clone(),
+        noteText: fm.note.clone(),
+        usingInfo: fm.using.clone(),
         parsed_rules: ParsedRules {
             permissions: BuildParsedRulesCategory(&fm.permissions, "permissions", allRulesData),
             conditions: BuildParsedRulesCategory(&fm.conditions, "conditions", allRulesData),

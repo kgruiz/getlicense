@@ -104,7 +104,7 @@ pub async fn UpdateAndLoadLicenseCache(
     match crate::api::FetchGithubDirListing(OWNER_CONST, REPO_CONST, DATA_PATH_STR, BRANCH_CONST).await {
         Ok(ghDataFiles) => {
 
-            for ghFileInfo in ghDataFiles.iter().filter(|f| f.file_type == "file" && f.name.ends_with(".yml")) {
+            for ghFileInfo in ghDataFiles.iter().filter(|f| f.fileType == "file" && f.name.ends_with(".yml")) {
                 let cacheKey = format!("data:{}", ghFileInfo.name);
                 let existingEntry = currentCache.dataFiles.get(&cacheKey);
 
@@ -154,7 +154,7 @@ pub async fn UpdateAndLoadLicenseCache(
         Ok(ghLicenseFilesInfo) => {
             let filesToProcess: Vec<&GitHubFile> = ghLicenseFilesInfo
                 .iter()
-                .filter(|f| f.file_type == "file" && f.name.ends_with(".txt"))
+                .filter(|f| f.fileType == "file" && f.name.ends_with(".txt"))
                 .collect();
 
             if !filesToProcess.is_empty() {

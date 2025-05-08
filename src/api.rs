@@ -1,4 +1,4 @@
-use reqwest::header::{ACCEPT, AUTHORIZATION, USER_AGENT};
+use reqwest::header::{ACCEPT, AUTHORIZATION};
 use reqwest::Client;
 use serde::de::DeserializeOwned;
 use std::env;
