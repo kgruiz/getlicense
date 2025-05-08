@@ -1,5 +1,3 @@
-use std::collections::HashMap;
-
 // --- GitHub API ---
 pub const GITHUB_API_BASE_URL: &str = "https://api.github.com";
 pub const GITHUB_API_VERSION_HEADER: &str = "application/vnd.github.v3+json";

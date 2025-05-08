@@ -62,10 +62,9 @@ pub fn PrintDetailedLicenseList(
 
             }
 
-
             if let Some(desc) = &license.description {
 
-                 let shortDesc = textwrap::shorten(desc, 100, "...");
+                 let shortDesc = textwrap::truncate(desc, 100, "...");
                  println!("{}: {}", "Description".bold(), shortDesc);
 
             }
@@ -157,7 +156,7 @@ pub fn PrintLicenseInfoPanel(
                     colorFn(ruleDetail.label.bold()),
                     ruleDetail.tag.dimmed()
                 );
-                let shortDesc = textwrap::shorten(&ruleDetail.description, 80, "...");
+                let shortDesc = textwrap::truncate(&ruleDetail.description, 80, "...");
                 println!("    {}", shortDesc.italic().dimmed());
 
             }
@@ -452,10 +451,6 @@ pub fn DisplayLicenseSummaryAfterWrite(
     let rawPhToStdKeyMap: HashMap<_,_> = RAW_PLACEHOLDER_TO_STANDARD_KEY_TUPLES.iter().cloned().collect();
     let cliArgToCacheKeyMap: HashMap<_,_> = CLI_ARG_TO_CACHE_KEY_TUPLES.iter().cloned().collect();
 
-    let fieldsDataContent: Option<FieldsDataContent> = cache.dataFiles // dataFiles is correct
-        .get(crate::constants::FIELDS_YML_KEY)
-        .and_then(|entry| serde_yaml::from_value(entry.content.clone()).ok());
-
 
     if !licenseEntry.placeholdersInBody.is_empty() {
 
@@ -467,7 +462,7 @@ pub fn DisplayLicenseSummaryAfterWrite(
             let phLower = phNoBrackets.to_lowercase();
             let standardKeyOpt = rawPhToStdKeyMap.get(phLower.as_str());
 
-            let mut sourceInfo = "".to_string();
+            let mut sourceInfo: String;
             let mut valueUsedStr = "".to_string();
 
 

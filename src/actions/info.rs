@@ -1,4 +1,4 @@
-use crate::models::{Cache, FieldsDataContent, LicenseEntry};
+use crate::models::{Cache, FieldsDataContent};
 use crate::display;
 use crate::error::{AppError, ActionError};
 

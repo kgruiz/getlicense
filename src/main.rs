@@ -12,8 +12,10 @@ mod error;
 mod constants;
 // For potential direct calls or if actions re-export display functions
 mod display;
+mod parser;
+mod api;
 
-use cli::{Cli, Commands, Shell};
+use cli::{Cli, Commands};
 use error::AppError;
 use constants::DEFAULT_CACHE_FILENAME;
 
@@ -36,7 +38,7 @@ async fn main() -> Result<(), AppError> {
         eprintln!("Verbose mode enabled.");
     }
 
-    if let Some(shell) = cli_args.generate_completion {
+    if let Some(shell) = cli_args.generateCompletion {
         let mut cmd = <Cli as clap::CommandFactory>::command();
         let app_name = cmd.get_name().to_string();
         clap_complete::generate(shell, &mut cmd, app_name, &mut io::stdout());
@@ -112,7 +114,7 @@ async fn main() -> Result<(), AppError> {
         }
     }
 
-    if !action_was_handled && cli_args.generate_completion.is_none() {
+    if !action_was_handled && cli_args.generateCompletion.is_none() {
         <Cli as clap::CommandFactory>::command().print_help().map_err(|e| AppError::Io(e, PathBuf::from("clap help")))?;
         eprintln!("\nNo action specified. Use --help for usage information.");
         std::process::exit(1);

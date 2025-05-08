@@ -1,7 +1,6 @@
 use colored::*;
 use crate::models::Cache;
-use crate::error::{AppError, ActionError};
-use crate::constants::CACHABLE_PLACEHOLDER_KEYS;
+use crate::error::AppError;
 
 pub async fn SetPlaceholder(
     cache: &mut Cache,
@@ -79,13 +78,11 @@ pub async fn ClearPlaceholders(
 
     match keysOpt {
         Some(keysToClear) if !keysToClear.is_empty() => {
-            let mut clearedAny = false;
 
             for key in keysToClear {
 
                 if cache.userPlaceholders.remove(&key).is_some() {
                     println!("Cleared saved preference for '{}'.", key.green());
-                    clearedAny = true;
                 } else {
                     println!("No saved preference found for key '{}' to clear.", key.yellow());
                 }
