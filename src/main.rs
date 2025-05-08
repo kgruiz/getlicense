@@ -70,10 +70,10 @@ async fn main() -> Result<(), AppError> {
             actions::list::DetailedListLicenses(&cache_data, args.licenseIds).await?;
         }
         Some(Commands::Info(args)) => {
-            actions::info::DisplayLicenseInfo(&cache_data, &args.licenseId, &cli_args).await?;
+            actions::info::DisplayLicenseInfo(&cache_data, &args.licenseId).await?;
         }
         Some(Commands::ShowPlaceholders(args)) => {
-            actions::info::ShowPlaceholdersForLicense(&cache_data, &args.licenseId, &cli_args).await?;
+            actions::info::ShowPlaceholdersForLicense(&cache_data, &args.licenseId).await?;
         }
         Some(Commands::Compare(args)) => {
             actions::compare::CompareLicenses(&cache_data, args.licenseIds).await?;
