@@ -113,11 +113,11 @@ pub async fn FillLicenseTemplateAction(
 
 
     if let Some(parent) = outputPath.parent() {
-        fs::create_dir_all(parent).map_err(|e| AppError::Io(e, parent.to_path_buf()))?;
+        fs::create_dir_all(parent).map_err(|e| AppError::ActionErrorVariant(ActionError::FileOperation(e, parent.to_path_buf())))?;
     }
 
     fs::write(&outputPath, filledLicenseBody.clone() + "\n")
-        .map_err(|e| AppError::Io(e, outputPath.clone()))?;
+        .map_err(|e| AppError::ActionErrorVariant(ActionError::FileOperation(e, outputPath.clone())))?;
 
     let mut placeholderCacheModified = false;
 

@@ -12,12 +12,10 @@ pub const DATA_PATH_STR: &str = "_data";
 
 // --- Cache ---
 pub const DEFAULT_CACHE_FILENAME: &str = "license_cache_rs.json";
-pub const USER_PLACEHOLDERS_KEY: &str = "user_placeholders_v1";
 
 // Specific data file keys (used to access them in the cache.data_files HashMap)
 pub const RULES_YML_KEY: &str = "data:rules.yml";
 pub const FIELDS_YML_KEY: &str = "data:fields.yml";
-pub const META_YML_KEY: &str = "data:meta.yml";
 
 // --- Placeholder Management ---
 // Standardized keys used internally for the user_placeholders cache and for CLI arg mapping.

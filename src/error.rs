@@ -21,9 +21,6 @@ pub enum AppError {
     #[error("I/O error for path '{1}': {0}")]
     Io(#[source] std::io::Error, PathBuf), // Or IoError if Io is a type name
 
-    #[error("Configuration error: {0}")]
-    ConfigError(String),
-
     #[error("No action specified by the user.")]
     NoActionSpecified,
 }
@@ -41,9 +38,6 @@ pub enum ApiError {
 
     #[error("Failed to deserialize API response: {0}")]
     DeserializationError(#[from] serde_json::Error),
-
-    #[error("API endpoint not found or invalid: {0}")]
-    EndpointNotFound(String),
 }
 
 #[derive(Error, Debug)]
@@ -56,12 +50,6 @@ pub enum CacheError {
 
     #[error("Failed to deserialize cache data from '{1}': {0}")]
     Deserialization(#[source] serde_json::Error, PathBuf),
-
-    #[error("Cache entry not found for key: {0}")]
-    EntryNotFound(String),
-
-    #[error("Cache data is in an inconsistent or invalid state: {0}")]
-    InvalidState(String),
 }
 
 #[derive(Error, Debug)]
@@ -71,9 +59,6 @@ pub enum ParseError {
 
     #[error("Missing SPDX ID in license file: {0}")]
     MissingSpdxId(String),
-
-    #[error("Front matter parsing failed for file: {0}")]
-    FrontMatterError(String),
 
     #[error("Regex error during parsing: {0}")]
     RegexError(#[from] regex::Error),
@@ -92,7 +77,4 @@ pub enum ActionError {
 
     #[error("Failed to perform file operation for '{1}': {0}")]
     FileOperation(#[source] std::io::Error, PathBuf),
-
-    #[error("An unexpected error occurred during action: {0}")]
-    Other(String),
 }

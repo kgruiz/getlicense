@@ -118,8 +118,8 @@ async fn main() -> Result<(), AppError> {
 
     if !action_was_handled && cli_args.generateCompletion.is_none() {
         <Cli as clap::CommandFactory>::command().print_help().map_err(|e| AppError::Io(e, PathBuf::from("clap help")))?;
-        eprintln!("\nNo action specified. Use --help for usage information.");
-        std::process::exit(1);
+        // Instead of exiting directly, return an error. The help message is printed above.
+        return Err(AppError::NoActionSpecified);
     }
 
     if cache_updated_by_fetch || unsafe { CACHE_MODIFIED_BY_ACTION } {
