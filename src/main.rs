@@ -18,7 +18,7 @@ use constants::DEFAULT_CACHE_FILENAME;
 
 // Global flag to indicate if cache was modified by an action (e.g. placeholder management)
 // This helps decide if SaveCache needs to be called.
-static mut VERBOSE: bool = false;
+pub static mut VERBOSE: bool = false;
 static mut CACHE_MODIFIED_BY_ACTION: bool = false;
 
 
@@ -112,7 +112,7 @@ async fn main() -> Result<(), AppError> {
     }
 
     if !action_was_handled && cli_args.generate_completion.is_none() {
-        <Cli as clap::CommandFactory>::command().print_help()?;
+        <Cli as clap::CommandFactory>::command().print_help().map_err(|e| AppError::Io(e, std::path::PathBuf::from("clap help")))?;
         eprintln!("\nNo action specified. Use --help for usage information.");
         std::process::exit(1);
     }

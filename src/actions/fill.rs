@@ -18,7 +18,7 @@ pub async fn FillLicenseTemplateAction(
     cliAllArgs: &FullCliArgs,
 ) -> Result<bool, AppError> {
 
-    let spdxIdLower = args.license_id.to_lowercase();
+    let spdxIdLower = args.licenseId.to_lowercase();
 
 
     if unsafe { crate::main::VERBOSE } {
@@ -26,16 +26,16 @@ pub async fn FillLicenseTemplateAction(
     }
 
     let licenseEntry = cache.licenses.get(&spdxIdLower)
-        .ok_or_else(|| AppError::ActionError(ActionError::LicenseNotFound(spdxIdLower.clone())))?;
+        .ok_or_else(|| AppError::ActionErrorVariant(ActionError::LicenseNotFound(spdxIdLower.clone())))?;
 
-    let templateBody = &licenseEntry.file_content_cached;
+    let templateBody = &licenseEntry.fileContentCached;
 
     println!("\nUsing license: {} ({})",
         licenseEntry.title.cyan().bold(),
-        licenseEntry.spdx_id.cyan()
+        licenseEntry.spdxId.cyan()
     );
 
-    let cachedPlaceholdersAtStart = cache.user_placeholders.clone();
+    let cachedPlaceholdersAtStart = cache.userPlaceholders.clone();
     let mut userProvidedForCaching: HashMap<String, String> = HashMap::new();
 
     // Collect CLI args for cachable placeholders
@@ -95,18 +95,18 @@ pub async fn FillLicenseTemplateAction(
 
     // 3. Handle 'year' (default or CLI, not from cache)
     let currentYearStr = chrono::Local::now().year().to_string();
-    let yearToUse = args.year.as_ref().unwrap_or(¤t_year_str);
-    finalTemplateReplacements.insert("year".to_string(), yearToUse.clone());
+    let year_to_use = args.year.as_ref().unwrap_or(&currentYearStr);
+    finalTemplateReplacements.insert("year".to_string(), year_to_use.clone());
 
     // For summary: user_provided_for_filling_summary includes explicit CLI args + year used
     let mut userProvidedForFillingSummary = userProvidedForCaching.clone();
-    userProvidedForFillingSummary.insert("year".to_string(), yearToUse.clone());
+    userProvidedForFillingSummary.insert("year".to_string(), year_to_use.clone());
 
     // Pass the extracted placeholders from the license entry
     let filledLicenseBody = parser::fill_license_template_body(
         templateBody,
         &finalTemplateReplacements,
-        &licenseEntry.placeholders_in_body
+        &licenseEntry.placeholdersInBody
     );
 
     let outputPath = args.output.clone().unwrap_or_else(|| PathBuf::from("LICENSE"));
@@ -123,7 +123,7 @@ pub async fn FillLicenseTemplateAction(
 
 
     if !userProvidedForCaching.is_empty() {
-        cache.user_placeholders.extend(userProvidedForCaching);
+        cache.userPlaceholders.extend(userProvidedForCaching);
         placeholderCacheModified = true;
 
         if unsafe { crate::main::VERBOSE } {
@@ -134,7 +134,7 @@ pub async fn FillLicenseTemplateAction(
 
     // Pass the whole cache for access to fields.yml etc. for summary display
     // Pass all CLI args for context for the summary display
-    display::display_license_summary_after_write(
+    display::DisplayLicenseSummaryAfterWrite(
         &licenseEntry,
         &cache,
         &outputPath,

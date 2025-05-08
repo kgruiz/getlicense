@@ -1,3 +1,4 @@
+use colored::*;
 use crate::models::Cache;
 use crate::error::{AppError, ActionError};
 use crate::constants::CACHABLE_PLACEHOLDER_KEYS;
@@ -12,10 +13,10 @@ pub async fn SetPlaceholder(
         eprintln!("[Action] Setting placeholder: {} = {}", key, value);
     }
 
-    cache.user_placeholders.insert(key.to_string(), value.to_string());
+    cache.userPlaceholders.insert(key.to_string(), value.to_string());
     println!("Placeholder '{}' set to '{}' in saved preferences.",
-        console::style(key).green(),
-        console::style(value).cyan()
+        key.green(),
+        value.cyan()
     );
 
     Ok(())
@@ -31,7 +32,7 @@ pub async fn GetPlaceholder(
     }
 
 
-    if cache.user_placeholders.is_empty() {
+    if cache.userPlaceholders.is_empty() {
         println!("No saved placeholder preferences found.");
 
         return Ok(());
@@ -41,11 +42,11 @@ pub async fn GetPlaceholder(
     match keyOpt {
         Some(key) => {
 
-            if let Some(value) = cache.user_placeholders.get(key) {
-                println!("{}: {}", console::style(key).green(), console::style(value).cyan());
+            if let Some(value) = cache.userPlaceholders.get(key) {
+                println!("{}: {}", key.green(), value.cyan());
             } else {
-                println!("No saved preference found for key '{}'.", console::style(key).yellow());
-                let availableKeys: Vec<String> = cache.user_placeholders.keys().cloned().collect();
+                println!("No saved preference found for key '{}'.", key.yellow());
+                let availableKeys: Vec<String> = cache.userPlaceholders.keys().cloned().collect();
 
                 if !availableKeys.is_empty() {
                     println!("Available saved keys: {}", availableKeys.join(", "));
@@ -53,12 +54,12 @@ pub async fn GetPlaceholder(
             }
         }
         None => {
-            println!("{}", console::style("Saved Placeholder Preferences:").bold());
-            let mut sortedPlaceholders: Vec<_> = cache.user_placeholders.iter().collect();
+            println!("{}", "Saved Placeholder Preferences:".bold());
+            let mut sortedPlaceholders: Vec<_> = cache.userPlaceholders.iter().collect();
             sortedPlaceholders.sort_by_key(|(k,_)| *k);
 
             for (k, v) in sortedPlaceholders {
-                println!("  {}: {}", console::style(k).green(), console::style(v).cyan());
+                println!("  {}: {}", k.green(), v.cyan());
             }
         }
     }
@@ -82,21 +83,21 @@ pub async fn ClearPlaceholders(
 
             for key in keysToClear {
 
-                if cache.user_placeholders.remove(&key).is_some() {
-                    println!("Cleared saved preference for '{}'.", console::style(key).green());
+                if cache.userPlaceholders.remove(&key).is_some() {
+                    println!("Cleared saved preference for '{}'.", key.green());
                     clearedAny = true;
                 } else {
-                    println!("No saved preference found for key '{}' to clear.", console::style(key).yellow());
+                    println!("No saved preference found for key '{}' to clear.", key.yellow());
                 }
             }
 
         }
         _ => {
 
-            if cache.user_placeholders.is_empty() {
+            if cache.userPlaceholders.is_empty() {
                 println!("No saved placeholder preferences to clear.");
             } else {
-                cache.user_placeholders.clear();
+                cache.userPlaceholders.clear();
                 println!("All saved placeholder preferences cleared.");
             }
         }

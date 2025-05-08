@@ -27,11 +27,10 @@ pub fn PrintSimpleLicenseList(cache: &Cache, targetKeys: &[String]) {
 
     for key in targetKeys {
 
-
         if let Some(license) = cache.licenses.get(key) {
 
             println!("  {:<25} : {}",
-                license.spdx_id.cyan(),
+                license.spdxId.cyan(),
                 license.title
             );
 
@@ -50,10 +49,9 @@ pub fn PrintDetailedLicenseList(
 
     for (i, key) in targetKeys.iter().enumerate() {
 
-
         if let Some(license) = cache.licenses.get(key) {
 
-            println!("\n{}", format!("SPDX ID: {}", license.spdx_id).cyan().bold());
+            println!("\n{}", format!("SPDX ID: {}", license.spdxId).cyan().bold());
             println!("{}", format!("Title: {}", license.title).bold());
 
 
@@ -71,7 +69,7 @@ pub fn PrintDetailedLicenseList(
 
             }
 
-            let parsedRules = &license.info_components.parsed_rules;
+            let parsedRules = &license.infoComponents.parsedRules;
 
             for (catName, colorFn, rulesList) in [
                 ("Permissions", ColoredString::green as fn(ColoredString)->ColoredString, &parsedRules.permissions),
@@ -109,7 +107,7 @@ pub fn PrintLicenseInfoPanel(
 ) {
     println!("\n--- {} ({}) ---",
         licenseEntry.title.bold(),
-        licenseEntry.spdx_id.bold()
+        licenseEntry.spdxId.bold()
     );
 
 
@@ -137,9 +135,9 @@ pub fn PrintLicenseInfoPanel(
     }
 
     PrintTextBlockDisplay("Description", licenseEntry.description.as_ref());
-    PrintTextBlockDisplay("How to Apply", licenseEntry.info_components.how_to_apply_text.as_ref());
+    PrintTextBlockDisplay("How to Apply", licenseEntry.infoComponents.howToApplyText.as_ref());
 
-    let parsedRules = &licenseEntry.info_components.parsed_rules;
+    let parsedRules = &licenseEntry.infoComponents.parsedRules;
 
     for (catName, colorFn, rulesList) in [
         ("Permissions", ColoredString::green as fn(ColoredString)->ColoredString, &parsedRules.permissions),
@@ -170,7 +168,7 @@ pub fn PrintLicenseInfoPanel(
     }
 
 
-    if let Some(usingMap) = &licenseEntry.info_components.using_info {
+    if let Some(usingMap) = &licenseEntry.infoComponents.usingInfo {
 
 
         if !usingMap.is_empty() {
@@ -189,16 +187,16 @@ pub fn PrintLicenseInfoPanel(
 
     }
 
-    PrintTextBlockDisplay("Note", licenseEntry.info_components.note_text.as_ref());
+    PrintTextBlockDisplay("Note", licenseEntry.infoComponents.noteText.as_ref());
 
     let placeholderMapCliArgs: HashMap<_,_> = PLACEHOLDER_TO_ARG_MAP_TUPLES.iter().cloned().collect();
 
 
-    if !licenseEntry.placeholders_in_body.is_empty() {
+    if !licenseEntry.placeholdersInBody.is_empty() {
 
         println!("\n{}", "Placeholders in Body:".bold());
 
-        for phFullStr in &licenseEntry.placeholders_in_body {
+        for phFullStr in &licenseEntry.placeholdersInBody {
 
             let phNoBrackets = phFullStr.trim_matches(|c| c == '[' || c == ']');
             let phLower = phNoBrackets.to_lowercase();
@@ -240,19 +238,19 @@ pub fn PrintPlaceholderList(
 ) {
     println!("\n--- {} ({}) ---",
         format!("Placeholders for {}", licenseEntry.title).bold(),
-        licenseEntry.spdx_id.bold()
+        licenseEntry.spdxId.bold()
     );
     let placeholderMapCliArgs: HashMap<_,_> = PLACEHOLDER_TO_ARG_MAP_TUPLES.iter().cloned().collect();
 
 
-    if licenseEntry.placeholders_in_body.is_empty() {
+    if licenseEntry.placeholdersInBody.is_empty() {
 
         println!("  {}", "(No standard [placeholder] patterns found)".dimmed());
 
     } else {
 
 
-        for phFullStr in &licenseEntry.placeholders_in_body {
+        for phFullStr in &licenseEntry.placeholdersInBody {
 
             let phNoBrackets = phFullStr.trim_matches(|c| c == '[' || c == ']');
             let phLower = phNoBrackets.to_lowercase();
@@ -288,7 +286,7 @@ pub fn PrintComparisonTable(
     licensesToCompare: &[&LicenseEntry],
     _rulesDataContent: &Option<RulesDataContent>,
 ) {
-    let licenseNames: Vec<String> = licensesToCompare.iter().map(|l| l.spdx_id.clone()).collect();
+    let licenseNames: Vec<String> = licensesToCompare.iter().map(|l| l.spdxId.clone()).collect();
     println!("Comparing: {}", licenseNames.join(", ").cyan());
     println!("\n{}", "Key Rule Indicators Table (Simplified):".bold());
 
@@ -316,7 +314,7 @@ pub fn PrintComparisonTable(
 
     for license in licensesToCompare {
 
-        print!("{:<20}", license.spdx_id.cyan());
+        print!("{:<20}", license.spdxId.cyan());
 
         for (_, tagKey) in KEY_RULES_FOR_COMPARISON_ARRAY.iter() {
 
@@ -370,7 +368,7 @@ pub fn PrintFindResults(matches: &[&LicenseEntry], requireTags: &[String], disal
 
         for license in matches {
 
-            println!("  - {} ({})", license.spdx_id.cyan(), license.title);
+            println!("  - {} ({})", license.spdxId.cyan(), license.title);
 
         }
 
@@ -419,7 +417,7 @@ pub fn DisplayLicenseSummaryAfterWrite(
 
     PrintTextBlockSummary("Description", licenseEntry.description.as_ref());
 
-    let parsedRules = &licenseEntry.info_components.parsed_rules;
+    let parsedRules = &licenseEntry.infoComponents.parsedRules;
 
     for (catName, colorFn, rulesList) in [
         ("Permissions", ColoredString::green as fn(ColoredString)->ColoredString, &parsedRules.permissions),
@@ -447,22 +445,22 @@ pub fn DisplayLicenseSummaryAfterWrite(
 
     }
 
-    PrintTextBlockSummary("Note", licenseEntry.info_components.note_text.as_ref());
+    PrintTextBlockSummary("Note", licenseEntry.infoComponents.noteText.as_ref());
 
     let placeholderMapCliArgs: HashMap<_,_> = PLACEHOLDER_TO_ARG_MAP_TUPLES.iter().cloned().collect();
     let rawPhToStdKeyMap: HashMap<_,_> = RAW_PLACEHOLDER_TO_STANDARD_KEY_TUPLES.iter().cloned().collect();
     let cliArgToCacheKeyMap: HashMap<_,_> = CLI_ARG_TO_CACHE_KEY_TUPLES.iter().cloned().collect();
 
-    let fieldsDataContent: Option<FieldsDataContent> = cache.data_files
+    let fieldsDataContent: Option<FieldsDataContent> = cache.dataFiles
         .get(crate::constants::FIELDS_YML_KEY)
         .and_then(|entry| serde_yaml::from_value(entry.content.clone()).ok());
 
 
-    if !licenseEntry.placeholders_in_body.is_empty() {
+    if !licenseEntry.placeholdersInBody.is_empty() {
 
         println!("\n{}", "Placeholder Values Used:".bold());
 
-        for phFullStr in &licenseEntry.placeholders_in_body {
+        for phFullStr in &licenseEntry.placeholdersInBody {
 
             let phNoBrackets = phFullStr.trim_matches(|c| c == '[' || c == ']');
             let phLower = phNoBrackets.to_lowercase();

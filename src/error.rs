@@ -4,95 +4,95 @@ use thiserror::Error;
 #[derive(Error, Debug)]
 pub enum AppError {
     #[error("CLI argument parsing error: {0}")]
-    cliArgsError(#[from] clap::Error),
+    CliArgsError(#[from] clap::Error),
 
     #[error("GitHub API interaction error: {0}")]
-    apiError(#[from] ApiError),
+    ApiErrorVariant(#[from] ApiError), // Renamed to avoid conflict with type ApiError
 
     #[error("Cache operation error: {0}")]
-    cacheError(#[from] CacheError),
+    CacheErrorVariant(#[from] CacheError), // Renamed to avoid conflict with type CacheError
 
     #[error("File parsing error: {0}")]
-    parseError(#[from] ParseError),
+    ParseErrorVariant(#[from] ParseError), // Renamed to avoid conflict with type ParseError
 
     #[error("Action execution error: {0}")]
-    actionError(#[from] ActionError),
+    ActionErrorVariant(#[from] ActionError), // Renamed to avoid conflict with type ActionError
 
     #[error("I/O error for path '{1}': {0}")]
-    io(#[source] std::io::Error, PathBuf),
+    Io(#[source] std::io::Error, PathBuf), // Or IoError if Io is a type name
 
     #[error("Configuration error: {0}")]
-    configError(String),
+    ConfigError(String),
 
     #[error("No action specified by the user.")]
-    noActionSpecified,
+    NoActionSpecified,
 }
 
 #[derive(Error, Debug)]
 pub enum ApiError {
     #[error("Reqwest HTTP client error: {0}")]
-    reqwestError(#[from] reqwest::Error),
+    ReqwestError(#[from] reqwest::Error),
 
     #[error("GitHub API HTTP error (Status: {status}): {body}")]
-    httpError {
+    HttpError {
         status: reqwest::StatusCode,
         body: String,
     },
 
     #[error("Failed to deserialize API response: {0}")]
-    deserializationError(#[from] serde_json::Error),
+    DeserializationError(#[from] serde_json::Error),
 
     #[error("API endpoint not found or invalid: {0}")]
-    endpointNotFound(String),
+    EndpointNotFound(String),
 }
 
 #[derive(Error, Debug)]
 pub enum CacheError {
     #[error("Failed to read/write cache file at '{1}': {0}")]
-    io(#[source] std::io::Error, PathBuf),
+    Io(#[source] std::io::Error, PathBuf), // Or IoError
 
     #[error("Failed to serialize cache data: {0}")]
-    serialization(#[from] serde_json::Error),
+    Serialization(#[from] serde_json::Error),
 
     #[error("Failed to deserialize cache data from '{1}': {0}")]
-    deserialization(#[source] serde_json::Error, PathBuf),
+    Deserialization(#[source] serde_json::Error, PathBuf),
 
     #[error("Cache entry not found for key: {0}")]
-    entryNotFound(String),
+    EntryNotFound(String),
 
     #[error("Cache data is in an inconsistent or invalid state: {0}")]
-    invalidState(String),
+    InvalidState(String),
 }
 
 #[derive(Error, Debug)]
 pub enum ParseError {
     #[error("YAML parsing error in file '{0}': {1}")]
-    yamlError(String, #[source] serde_yaml::Error),
+    YamlError(String, #[source] serde_yaml::Error),
 
     #[error("Missing SPDX ID in license file: {0}")]
-    missingSpdxId(String),
+    MissingSpdxId(String),
 
     #[error("Front matter parsing failed for file: {0}")]
-    frontMatterError(String),
+    FrontMatterError(String),
 
     #[error("Regex error during parsing: {0}")]
-    regexError(#[from] regex::Error),
+    RegexError(#[from] regex::Error),
 }
 
 #[derive(Error, Debug)]
 pub enum ActionError {
     #[error("License with SPDX ID '{0}' not found in cache.")]
-    licenseNotFound(String),
+    LicenseNotFound(String),
 
     #[error("Required data file '{0}' not found or failed to parse from cache.")]
-    missingData(String),
+    MissingData(String),
 
     #[error("Invalid input for action: {0}")]
-    invalidInput(String),
+    InvalidInput(String),
 
     #[error("Failed to perform file operation for '{1}': {0}")]
-    fileOperation(#[source] std::io::Error, PathBuf),
+    FileOperation(#[source] std::io::Error, PathBuf),
 
     #[error("An unexpected error occurred during action: {0}")]
-    other(String),
+    Other(String),
 }

@@ -14,17 +14,17 @@ pub async fn DisplayLicenseInfo(
 
     match cache.licenses.get(&spdxIdLower) {
         Some(licenseEntry) => {
-            let fieldsDataContent: Option<FieldsDataContent> = cache.data_files
+            let fieldsDataContent: Option<FieldsDataContent> = cache.dataFiles
                 .get(crate::constants::FIELDS_YML_KEY)
                 .and_then(|entry| serde_yaml::from_value(entry.content.clone()).ok());
 
-            display::print_license_info_panel(&licenseEntry, &fieldsDataContent);
+            display::PrintLicenseInfoPanel(&licenseEntry, &fieldsDataContent);
 
             Ok(())
         }
         None =>
 
-            Err(AppError::ActionError(ActionError::LicenseNotFound(spdxIdLower)))
+            Err(AppError::ActionErrorVariant(ActionError::LicenseNotFound(spdxIdLower)))
     }
 }
 
@@ -40,11 +40,11 @@ pub async fn ShowPlaceholdersForLicense(
 
     match cache.licenses.get(&spdxIdLower) {
         Some(licenseEntry) => {
-            let fieldsDataContent: Option<FieldsDataContent> = cache.data_files
+            let fieldsDataContent: Option<FieldsDataContent> = cache.dataFiles
                 .get(crate::constants::FIELDS_YML_KEY)
                 .and_then(|entry| serde_yaml::from_value(entry.content.clone()).ok());
 
-            display::print_placeholder_list(
+            display::PrintPlaceholderList(
                 &licenseEntry,
                 &fieldsDataContent,
             );
@@ -53,6 +53,6 @@ pub async fn ShowPlaceholdersForLicense(
         }
         None =>
 
-            Err(AppError::ActionError(ActionError::LicenseNotFound(spdxIdLower)))
+            Err(AppError::ActionErrorVariant(ActionError::LicenseNotFound(spdxIdLower)))
     }
 }

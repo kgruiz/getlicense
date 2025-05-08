@@ -56,11 +56,11 @@ pub async fn CompareLicenses(
         return Ok(());
     }
 
-    let rulesDataContent: Option<RulesDataContent> = cache.data_files
+    let rulesDataContent: Option<RulesDataContent> = cache.dataFiles
         .get(crate::constants::RULES_YML_KEY)
         .and_then(|entry| serde_yaml::from_value(entry.content.clone()).ok());
 
-    display::print_comparison_table(&licensesToCompare, &rulesDataContent);
+    display::PrintComparisonTable(&licensesToCompare, &rulesDataContent);
 
     Ok(())
 }
