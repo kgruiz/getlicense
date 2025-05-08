@@ -1,3 +1,5 @@
+#![allow(non_snake_case)]
+
 use clap::Parser;
 use std::io;
 use std::path::PathBuf;
