@@ -1,153 +1,165 @@
-# to-zsh
+# GetLicense
 
-`to-zsh` provides persistent, keyword-based directory shortcuts for Zsh, streamlining your command-line navigation. It eliminates the need to repeatedly type lengthy directory paths by allowing you to assign memorable keywords to frequently accessed directories and jump to them instantly.
+A command-line tool, written in Rust and licensed under the GPLv3, to fetch, display info for, compare, find, and fill open source license templates from the [github/choosealicense.com](https://github.com/github/choosealicense.com) repository. It utilizes local caching via Git SHAs to minimize GitHub API calls and enhance performance.
 
-## Table of Contents
+## Features
 
-- [Key Features](#key-features)
-- [Installation](#installation)
-- [Usage Guide](#usage-guide)
-- [Options](#options)
-- [Configuration Details](#configuration-details)
-- [Contributing](#contributing)
-- [License](#license)
-
-## Key Features
-
-- **Keyword-Based Navigation:** Assign concise keywords to directory paths.
-- **Instant Directory Switching:** Navigate quickly using the `to <keyword>` command.
-- **Shell Autocomplete:** Tab-completion for commands and saved keywords.
-- **Simple Shortcut Management:** Easily add (`--add`/`-a`), remove (`--rm`/`-r`), and list (`--list`/`-l`) your shortcuts.
-- **Relative Path Support:** Accepts relative or absolute directory paths, resolving relative paths to their absolute form automatically.
-- **Persistent Storage:** Shortcuts are stored in `~/.to_dirs`, ensuring they persist across shell sessions.
-- **Lightweight Integration:** Implemented as a single Zsh script file.
-- **Informative Output:** Utilizes clear, color-coded feedback.
+* **License Discovery & Caching:**
+  * Fetches license templates and metadata (`rules.yml`, `fields.yml`) from `choosealicense.com`.
+  * Maintains an efficient local JSON cache (`getlicense_cache.json`).
+  * Automatically updates cache based on remote file changes (Git SHAs).
+  * Pre-parses and caches license details (placeholders, rules, descriptions) for faster operations.
+* **Listing & Comparison:**
+  * `list [SPDX_ID ...]`: Display a simple list of available licenses (all or specified).
+  * `detailed-list [SPDX_ID ...]`: Show a detailed summary including rule tags.
+  * `compare [SPDX_ID ...]`: Compare key properties (permissions, conditions, limitations) of specified licenses (or all) in a table format.
+* **Detailed Information:**
+  * `info <SPDX_ID>`: View comprehensive information for a specific license, including description, rules with details, and placeholders.
+  * `show-placeholders <SPDX_ID>`: List only the placeholders (like `[year]`, `[fullname]`) required by a specific license template, along with their descriptions.
+* **Finding Licenses:**
+  * `find --require <RULE_TAG> --disallow <RULE_TAG>`: Search for licenses based on required or disallowed rule criteria (e.g., `commercial-use`, `disclose-source`).
+* **Template Filling:**
+  * `license <SPDX_ID> [options...]`: Generate a license file by filling placeholders (e.g., `--year`, `--fullname`, `--project`) in the chosen template.
+  * Outputs a summary indicating the source of filled values (CLI argument, saved preference, default) and warns about any unfilled placeholders remaining in the output file.
+* **Placeholder Preferences:**
+  * Manage saved default values for common placeholders (`fullname`, `project`, `email`, `projecturl`) to streamline license generation.
+  * Commands: `set-placeholder`, `get-placeholder`, `clear-placeholders`.
+* **Shell Completion:**
+  * Generate shell completion scripts (`--generate-completion <SHELL>`) for common shells (Zsh, Bash, Fish, etc.).
 
 ## Installation
 
-1. **Clone the Repository (or Download `to.zsh`)**
-    Choose a location for the script (e.g., `~/.config/zsh/plugins/to-zsh`).
+### Prerequisites
+
+* Rust toolchain (latest stable recommended). Install via [rustup.rs](https://rustup.rs/).
+
+### From Source
+
+1. Clone the repository:
 
     ```bash
-    # Option 1: Clone the repository
-    git clone https://github.com/kgruiz/to-zsh.git ~/.config/zsh/plugins/to-zsh
-
-    # Option 2: Create the directory and download the file
-    mkdir -p ~/.config/zsh/plugins/to-zsh
-    curl -o ~/.config/zsh/plugins/to-zsh/to.zsh https://raw.githubusercontent.com/kgruiz/to-zsh/main/to.zsh
+    git clone https://github.com/kgruiz/getlicense.git
+    cd getlicense
     ```
 
-2. **Source the Script in `.zshrc`**
-    Add the following snippet to your `~/.zshrc` configuration file. Adjust `TO_FUNC_PATH` to the actual location where you placed `to.zsh`.
+2. Build the release binary:
 
     ```bash
-    # init zsh completion
-    autoload -Uz compinit
-    compinit
-
-    # load to-zsh
-    TO_FUNC_PATH="$HOME/.config/zsh/plugins/to-zsh/to.zsh"
-    if [ -f "$TO_FUNC_PATH" ]; then
-      if ! . "$TO_FUNC_PATH" 2>&1; then
-        echo "Error: Failed to source \"$(basename "$TO_FUNC_PATH")\"" >&2
-      fi
-    else
-      echo "Error: \"$(basename "$TO_FUNC_PATH")\" not found at:" >&2
-      echo "  $TO_FUNC_PATH" >&2
-    fi
-    unset TO_FUNC_PATH
+    cargo build --release
     ```
 
-3. **Apply Changes**
+3. Copy the executable (`target/release/getlicense`) to a directory included in your system's `PATH`, for example:
 
     ```bash
-    source ~/.zshrc
+    mkdir -p ~/.local/bin
+    cp target/release/getlicense ~/.local/bin/getlicense
+    # Ensure ~/.local/bin is in your PATH (modify your shell's configuration file accordingly)
+    # Example for Bash/Zsh: export PATH="$HOME/.local/bin:$PATH"
     ```
 
-## Usage Guide
-
-The `to` command facilitates shortcut management and execution.
-
-**1. Adding a Shortcut**
-Register a new shortcut using `to --add <keyword> <path>` or the shorthand `to -a <keyword> <path>`. The specified path can be relative or absolute; relative paths will be resolved to their absolute form automatically.
+### From Crates.io (Once Published)
 
 ```bash
-❯ to --add proj ../my-project
-Added proj → ../my-project
+cargo install getlicense
 ```
 
-**2. Jumping to a Saved Directory**
-Navigate to a directory associated with a keyword using `to <keyword>`.
+## Usage
+
+For a full list of commands and options:
 
 ```bash
-❯ to proj
-Changed directory to ~/Development/my-project
-
-❯ pwd
-/Users/youruser/Development/my-project
+getlicense --help
 ```
 
-**3. Listing Saved Shortcuts**
-Display all currently registered shortcuts with `to --list` or `to -l`.
+**Common Examples:**
 
 ```bash
-❯ to --list
-proj → ~/Development/my-project
-docs → /usr/share/doc
-conf → ~/.config
-dotfiles → ~/Repositories/dotfiles
+# List all available licenses (uses cache if available)
+getlicense list
+
+# Force refresh cache then list licenses
+getlicense --refresh list
+
+# Show detailed info for the MIT license
+getlicense info MIT
+
+# Show placeholders required by the Apache-2.0 license
+getlicense show-placeholders Apache-2.0
+
+# Compare MIT, Apache-2.0, and GPL-3.0 licenses
+getlicense compare MIT Apache-2.0 GPL-3.0
+
+# Find licenses permitting commercial use but requiring source disclosure
+getlicense find --require commercial-use --require disclose-source
+
+# Generate an MIT license file named 'LICENSE_MIT', filling placeholders
+getlicense license MIT --fullname "Example Corp." --year 2024 --project "My Project" -o LICENSE_MIT
+
+# Save a default value for the 'fullname' placeholder for future use
+getlicense set-placeholder fullname "My Default Name/Org"
+
+# View all saved placeholder preferences
+getlicense get-placeholder
+
+# Clear only the saved 'email' preference
+getlicense clear-placeholders email
 ```
 
-**4. Removing a Shortcut**
-Delete an existing shortcut using `to --rm <keyword>` or `to -r <keyword>`.
+### Shell Completion Setup
+
+Generate the completion script for your preferred shell and follow its installation instructions.
+
+**Example for Zsh:**
 
 ```bash
-❯ to --rm docs
-Removed docs.
+getlicense --generate-completion zsh > _getlicense
+# Move the generated _getlicense file to a directory in your $fpath
+# (e.g., ~/.zsh/completion/, creating it if necessary)
+mkdir -p ~/.zsh/completion
+mv _getlicense ~/.zsh/completion/
+# Ensure your .zshrc sources completions, typically includes lines like:
+# fpath=($HOME/.zsh/completion $fpath)
+# autoload -Uz compinit && compinit
 ```
 
-**5. Displaying Help Information**
-View the command usage and options with `to --help` or `to -h`.
+**Example for Bash:**
 
 ```bash
-❯ to --help
-to - Persistent Directory Shortcuts
-
-Usage:
-  to <keyword>
-  to --add, -a <keyword> <path>
-  to --rm, -r <keyword>
-  to --list, -l
-  to --help, -h
-
-Commands:
-  keyword      Jump to saved directory
-  --add, -a    Save new shortcut
-  --rm, -r     Remove shortcut
-  --list, -l   List shortcuts
-  --help, -h   Show this help
+getlicense --generate-completion bash > getlicense-completion.bash
+# Source the file from your .bashrc or .bash_profile:
+# echo 'source ~/getlicense-completion.bash' >> ~/.bashrc
+# Alternatively, if using bash-completion package:
+# mkdir -p ~/.local/share/bash-completion/completions
+# mv getlicense-completion.bash ~/.local/share/bash-completion/completions/getlicense
 ```
 
-## Options
+## Development
 
-| Option              | Short | Description                         |
-|---------------------|-------|-------------------------------------|
-| `--add <k> <path>`  | `-a`  | Add a new shortcut `k` → `path`.    |
-| `--rm <k>`          | `-r`  | Remove shortcut associated with `k`.|
-| `--list`            | `-l`  | List all saved shortcuts.           |
-| `--help`            | `-h`  | Show help message and usage.        |
+Standard Rust project commands:
 
-## Configuration Details
-
-- Directory shortcuts are stored line by line in the `~/.to_dirs` file.
-- Each line follows the format: `keyword=absolute_path`.
-- While direct editing of `~/.to_dirs` is possible, using the `to --add` and `to --rm` commands ensures proper formatting and validation.
+* Build: `cargo build`
+* Run: `cargo run -- <args>`
+* Test: `cargo test`
+* Format: `cargo fmt`
+* Lint: `cargo clippy`
 
 ## Contributing
 
-Contributions, bug reports, and feature suggestions are welcome. Please refer to the repository's [issues tracker](https://github.com/kgruiz/to-zsh/issues) for ongoing development and discussion.
+Contributions are welcome! Please feel free to open an issue to discuss changes or submit a pull request. Note that contributions to this project are accepted under the terms of the GPLv3 license.
 
 ## License
 
-Distributed under the **GNU GPL v3.0**.
-See [LICENSE](LICENSE) or <https://www.gnu.org/licenses/gpl-3.0.html> for details.
+**Tool License:**
+
+This project (the `getlicense` tool itself) is licensed under the **GNU General Public License version 3 (GPLv3)**.
+
+* The full text of the license is included in the [LICENSE](./LICENSE) file in this repository.
+
+**Content Source Licensing:**
+
+The license templates and metadata fetched by this tool originate from the [github/choosealicense.com](https://github.com/github/choosealicense.com) repository. That content is separately licensed:
+
+* The *content* (license texts, descriptions, metadata) is licensed under the [Creative Commons Attribution 3.0 Unported license (CC BY 3.0)](https://creativecommons.org/licenses/by/3.0/).
+* The *source code* of the choosealicense.com website itself is licensed under the MIT license.
+
+This tool's GPLv3 license applies only to the code of the tool itself, not to the content it fetches and displays. Proper attribution to the source is provided by this notice.
