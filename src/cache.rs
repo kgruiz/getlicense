@@ -10,14 +10,14 @@ use crate::parser;
 use crate::error::CacheError;
 use crate::constants::{
     OWNER_CONST, REPO_CONST, BRANCH_CONST, LICENSES_PATH_STR, DATA_PATH_STR,
-    RULES_YML_KEY;
+    RULES_YML_KEY
 };
 
 
 pub async fn LoadCache(cachePath: &Path) -> Result<Cache, CacheError> {
 
     if !cachePath.exists() {
-        if unsafe { crate::main::VERBOSE } {
+        if unsafe { crate::VERBOSE } {
             eprintln!("[Cache] Cache file not found at {:?}. Starting with empty cache.", cachePath);
         }
 
@@ -27,7 +27,7 @@ pub async fn LoadCache(cachePath: &Path) -> Result<Cache, CacheError> {
     let content = fs::read_to_string(cachePath).map_err(|e| CacheError::Io(e, cachePath.to_path_buf()))?;
 
     if content.trim().is_empty() {
-        if unsafe { crate::main::VERBOSE } {
+        if unsafe { crate::VERBOSE } {
             eprintln!("[Cache] Cache file at {:?} is empty. Starting fresh.", cachePath);
         }
 
@@ -45,7 +45,7 @@ pub async fn SaveCache(cachePath: &Path, cacheData: &Cache) -> Result<(), CacheE
     let content = serde_json::to_string_pretty(cacheData).map_err(CacheError::Serialization)?;
     fs::write(cachePath, content).map_err(|e| CacheError::Io(e, cachePath.to_path_buf()))?;
 
-    if unsafe { crate::main::VERBOSE } {
+    if unsafe { crate::VERBOSE } {
         eprintln!("[Cache] Cache saved to {:?}", cachePath);
     }
 
@@ -70,19 +70,19 @@ pub async fn UpdateAndLoadLicenseCache(
     forceRefresh: bool,
 ) -> Result<(Cache, bool), CacheError> {
 
-    if unsafe { crate::main::VERBOSE } {
+    if unsafe { crate::VERBOSE } {
         eprintln!("[Cache] Updating and loading license cache from {:?}...", cachePath);
     }
 
     let mut currentCache = if forceRefresh {
 
-        if unsafe { crate::main::VERBOSE } {
+        if unsafe { crate::VERBOSE } {
             eprintln!("[Cache] Force refresh enabled. Ignoring existing cache content for fetching.");
         }
         Cache::default()
     } else {
         LoadCache(cachePath).await.unwrap_or_else(|err| {
-            if unsafe { crate::main::VERBOSE } {
+            if unsafe { crate::VERBOSE } {
                 eprintln!("[Cache] Warning: Failed to load cache ({:?}), starting fresh: {}", cachePath, err);
             }
             Cache::default()
@@ -100,7 +100,7 @@ pub async fn UpdateAndLoadLicenseCache(
     let mut newLicensesCache: HashMap<String, LicenseEntry> = HashMap::new();
     let mut newDataFilesCache: HashMap<String, DataFileEntry> = HashMap::new();
 
-    if unsafe { crate::main::VERBOSE } {
+    if unsafe { crate::VERBOSE } {
         eprintln!("[Cache] Checking _data files...");
     }
 
@@ -113,7 +113,7 @@ pub async fn UpdateAndLoadLicenseCache(
 
                 if forceRefresh || existingEntry.map_or(true, |e| e.sha != ghFileInfo.sha) {
 
-                    if unsafe { crate::main::VERBOSE } {
+                    if unsafe { crate::VERBOSE } {
                         eprintln!("[Cache] Fetching data file: {}", ghFileInfo.name);
                     }
 
@@ -149,7 +149,7 @@ pub async fn UpdateAndLoadLicenseCache(
         .get(RULES_YML_KEY)
         .and_then(|entry| serde_yaml::from_value(entry.content.clone()).ok());
 
-    if unsafe { crate::main::VERBOSE } {
+    if unsafe { crate::VERBOSE } {
         eprintln!("[Cache] Checking _licenses files...");
     }
 
@@ -169,7 +169,7 @@ pub async fn UpdateAndLoadLicenseCache(
                     let mut existingEntryKey: Option<String> = None;
                     let mut existingEntrySha: Option<String> = None;
 
-                    for (key, entry) in ¤tCache.licenses {
+                    for (key, entry) in &currentCache.licenses {
                         if entry.filename == ghFileInfo.name {
                             existingEntryKey = Some(key.clone());
                             existingEntrySha = Some(entry.sha.clone());
@@ -179,7 +179,7 @@ pub async fn UpdateAndLoadLicenseCache(
 
                     if forceRefresh || existingEntrySha.map_or(true, |s| s != ghFileInfo.sha) {
 
-                        if unsafe { crate::main::VERBOSE } {
+                        if unsafe { crate::VERBOSE } {
                             eprintln!("[Cache] Fetching license file: {}", ghFileInfo.name);
                         }
 
@@ -225,7 +225,7 @@ pub async fn UpdateAndLoadLicenseCache(
                 pb.finish_with_message("License sync complete.");
             } else {
 
-                if unsafe { crate::main::VERBOSE } { eprintln!("[Cache] No .txt files found in _licenses directory on GitHub."); }
+                if unsafe { crate::VERBOSE } { eprintln!("[Cache] No .txt files found in _licenses directory on GitHub."); }
             }
         }
         Err(e) => {
@@ -238,7 +238,7 @@ pub async fn UpdateAndLoadLicenseCache(
     currentCache.data_files = newDataFilesCache;
     currentCache.user_placeholders = userPlaceholdersBackup;
 
-    if !cacheUpdatedByFetch && !forceRefresh && unsafe { crate::main::VERBOSE } {
+    if !cacheUpdatedByFetch && !forceRefresh && unsafe { crate::VERBOSE } {
         eprintln!("[Cache] Cache is up-to-date regarding remote files.");
     }
 
