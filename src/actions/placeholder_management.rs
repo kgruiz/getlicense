@@ -9,7 +9,7 @@ pub async fn SetPlaceholder(
     value: &str,
 ) -> Result<(), AppError> {
 
-    if unsafe { crate::main::VERBOSE } {
+    if unsafe { crate::VERBOSE } {
         eprintln!("[Action] Setting placeholder: {} = {}", key, value);
     }
 
@@ -27,7 +27,7 @@ pub async fn GetPlaceholder(
     keyOpt: Option<&str>,
 ) -> Result<(), AppError> {
 
-    if unsafe { crate::main::VERBOSE } {
+    if unsafe { crate::VERBOSE } {
         eprintln!("[Action] Getting placeholder(s). Key: {:?}", keyOpt);
     }
 
@@ -72,7 +72,7 @@ pub async fn ClearPlaceholders(
     keysOpt: Option<Vec<String>>,
 ) -> Result<(), AppError> {
 
-    if unsafe { crate::main::VERBOSE } {
+    if unsafe { crate::VERBOSE } {
         eprintln!("[Action] Clearing placeholder(s). Keys: {:?}", keysOpt);
     }
 

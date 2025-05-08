@@ -7,14 +7,14 @@ pub async fn CompareLicenses(
     requestedIds: Option<Vec<String>>,
 ) -> Result<(), AppError> {
 
-    if unsafe { crate::main::VERBOSE } {
+    if unsafe { crate::VERBOSE } {
         eprintln!("[Action] Comparing licenses. Requested IDs: {:?}", requestedIds);
     }
 
     let targetKeysLower: Vec<String> = match requestedIds {
         Some(ids) if !ids.is_empty() => ids
             .into_iter()
-            .filter_map(|idStr| {
+            .filter_map(|idStr| { // idStr is correct
                 let idLower = idStr.to_lowercase();
 
                 if cache.licenses.contains_key(&idLower) {
@@ -56,7 +56,7 @@ pub async fn CompareLicenses(
         return Ok(());
     }
 
-    let rulesDataContent: Option<RulesDataContent> = cache.dataFiles
+    let rulesDataContent: Option<RulesDataContent> = cache.dataFiles // dataFiles is correct
         .get(crate::constants::RULES_YML_KEY)
         .and_then(|entry| serde_yaml::from_value(entry.content.clone()).ok());
 

@@ -7,7 +7,7 @@ fn GetTargetLicenseKeys(
     requestedIds: Option<Vec<String>>,
 ) -> Vec<String> {
 
-    match requestedIds {
+    match requestedIds { // requestedIds is correct
 
         Some(ids) if !ids.is_empty() => ids
             .into_iter()
@@ -40,13 +40,13 @@ pub async fn ListLicenses(
     requestedIds: Option<Vec<String>>,
 ) -> Result<(), AppError> {
 
-    if unsafe { crate::main::VERBOSE } {
+    if unsafe { crate::VERBOSE } {
         eprintln!("[Action] Listing licenses. Requested IDs: {:?}", requestedIds);
     }
 
     let targetKeys = GetTargetLicenseKeys(cache, requestedIds);
 
-    if targetKeys.is_empty() {
+    if targetKeys.is_empty() { // targetKeys is correct
 
         if cache.licenses.is_empty() {
             println!("No licenses found in the cache.");
@@ -60,7 +60,7 @@ pub async fn ListLicenses(
 
     }
 
-    display::print_simple_license_list(cache, &targetKeys);
+    display::PrintSimpleLicenseList(cache, &targetKeys);
 
     return Ok(());
 
@@ -71,7 +71,7 @@ pub async fn DetailedListLicenses(
     requestedIds: Option<Vec<String>>,
 ) -> Result<(), AppError> {
 
-    if unsafe { crate::main::VERBOSE } {
+    if unsafe { crate::VERBOSE } {
         eprintln!("[Action] Detailed listing of licenses. Requested IDs: {:?}", requestedIds);
     }
 
@@ -92,10 +92,10 @@ pub async fn DetailedListLicenses(
     }
 
     // The display function will need access to rules.yml for labels
-    let rulesDataContent = cache.data_files.get(crate::constants::RULES_YML_KEY)
+    let rulesDataContent = cache.dataFiles.get(crate::constants::RULES_YML_KEY)
         .and_then(|entry| serde_yaml::from_value(entry.content.clone()).ok());
 
-    display::print_detailed_license_list(cache, &targetKeys, &rulesDataContent);
+    display::PrintDetailedLicenseList(cache, &targetKeys, &rulesDataContent);
 
     return Ok(());
 

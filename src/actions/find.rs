@@ -12,24 +12,24 @@ pub async fn FindMatchingLicenses(
     let disallowTags = disallowTagsOpt.unwrap_or_default();
 
 
-    if unsafe { crate::main::VERBOSE } {
+    if unsafe { crate::VERBOSE } {
         eprintln!("[Action] Finding licenses. Require: {:?}, Disallow: {:?}", requireTags, disallowTags);
     }
 
 
     if requireTags.is_empty() && disallowTags.is_empty() {
 
-        return Err(AppError::ActionError(ActionError::InvalidInput(
+        return Err(AppError::ActionErrorVariant(ActionError::InvalidInput(
             "Please provide at least one --require or --disallow tag for finding licenses.".to_string(),
         )));
 
     }
 
 
-    let rulesDataContent: RulesDataContent = cache.data_files
+    let rulesDataContent: RulesDataContent = cache.dataFiles // dataFiles is correct
         .get(crate::constants::RULES_YML_KEY)
         .and_then(|entry| serde_yaml::from_value(entry.content.clone()).ok())
-        .ok_or_else(|| AppError::ActionError(ActionError::MissingData(
+        .ok_or_else(|| AppError::ActionErrorVariant(ActionError::MissingData( // Corrected this line based on other similar changes
             "rules.yml data not found in cache. Cannot validate find tags.".to_string()
         )))?;
 
@@ -63,7 +63,7 @@ pub async fn FindMatchingLicenses(
         }
 
 
-        return Err(AppError::ActionError(ActionError::InvalidInput(errMsg)));
+        return Err(AppError::ActionErrorVariant(ActionError::InvalidInput(errMsg)));
 
     }
 
@@ -89,9 +89,9 @@ pub async fn FindMatchingLicenses(
     }
 
     // Sort matches by SPDX ID for consistent output
-    matches.sort_by_key(|entry| &entry.spdx_id);
+    matches.sort_by_key(|entry| &entry.spdxId);
 
-    display::print_find_results(&matches, &requireTags, &disallowTags);
+    display::PrintFindResults(&matches, &requireTags, &disallowTags);
 
     Ok(())
 }

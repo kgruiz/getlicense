@@ -1,8 +1,6 @@
 use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
-use chrono::Datelike;
-use colored::*;
 
 use crate::models::Cache;
 use crate::cli::{LicenseFillArgs, Cli as FullCliArgs};
@@ -10,6 +8,8 @@ use crate::parser;
 use crate::display;
 use crate::error::{AppError, ActionError};
 use crate::constants::{CACHABLE_PLACEHOLDER_KEYS, CLI_ARG_TO_CACHE_KEY_TUPLES};
+use chrono::Datelike;
+use colored::*;
 
 
 pub async fn FillLicenseTemplateAction(
@@ -21,7 +21,7 @@ pub async fn FillLicenseTemplateAction(
     let spdxIdLower = args.licenseId.to_lowercase();
 
 
-    if unsafe { crate::main::VERBOSE } {
+    if unsafe { crate::VERBOSE } {
         eprintln!("[Action] Filling license template for: {}", spdxIdLower);
     }
 
@@ -82,7 +82,7 @@ pub async fn FillLicenseTemplateAction(
 
     // 1. Start with cached preferences (non-year)
 
-    for keyStr in CACHABLE_PLACEHOLDER_KEYS.iter() {
+    for keyStr in CACHABLE_PLACEHOLDER_KEYS.iter() { // CACHABLE_PLACEHOLDER_KEYS is an array of &str
 
         if let Some(val) = cachedPlaceholdersAtStart.get(*keyStr) {
             finalTemplateReplacements.insert(keyStr.to_string(), val.clone());
@@ -103,7 +103,7 @@ pub async fn FillLicenseTemplateAction(
     userProvidedForFillingSummary.insert("year".to_string(), year_to_use.clone());
 
     // Pass the extracted placeholders from the license entry
-    let filledLicenseBody = parser::fill_license_template_body(
+    let filledLicenseBody = parser::FillLicenseTemplateBody(
         templateBody,
         &finalTemplateReplacements,
         &licenseEntry.placeholdersInBody
@@ -126,14 +126,14 @@ pub async fn FillLicenseTemplateAction(
         cache.userPlaceholders.extend(userProvidedForCaching);
         placeholderCacheModified = true;
 
-        if unsafe { crate::main::VERBOSE } {
+        if unsafe { crate::VERBOSE } {
             eprintln!("[Action] Updated saved placeholder preferences with current CLI arguments.");
         }
 
     }
 
     // Pass the whole cache for access to fields.yml etc. for summary display
-    // Pass all CLI args for context for the summary display
+    // Pass all CLI args for context for the summary display    
     display::DisplayLicenseSummaryAfterWrite(
         &licenseEntry,
         &cache,

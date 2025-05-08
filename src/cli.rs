@@ -1,5 +1,6 @@
 use clap::{Parser, Subcommand, ValueEnum, Args as ClapArgs};
 use std::path::PathBuf;
+use clap::builder::TypedValueParser;
 
 pub use clap_complete::Shell;
 

@@ -21,7 +21,7 @@ async fn GetGithubApiGeneric<T: DeserializeOwned>(
     let token = env::var("GITHUB_TOKEN").ok();
     let url = format!("{}{}", GITHUB_API_BASE_URL, endpoint);
 
-    if unsafe { crate::main::VERBOSE } {
+    if unsafe { crate::VERBOSE } {
         eprintln!("API Request: GET {}", url);
 
         if token.is_some() {
@@ -38,7 +38,7 @@ async fn GetGithubApiGeneric<T: DeserializeOwned>(
 
     let response = requestBuilder.send().await.map_err(ApiError::ReqwestError)?;
 
-    if unsafe { crate::main::VERBOSE } {
+    if unsafe { crate::VERBOSE } {
         eprintln!("API Response Status: {}", response.status());
     }
 
@@ -74,7 +74,7 @@ pub async fn FetchGithubDirListing(
 pub async fn FetchFileContent(downloadUrl: &str) -> Result<String, ApiError> {
     let client = GetHttpClient().map_err(ApiError::ReqwestError)?;
 
-    if unsafe { crate::main::VERBOSE } {
+    if unsafe { crate::VERBOSE } {
         eprintln!("Fetching file content from: {}", downloadUrl);
     }
 
@@ -85,7 +85,7 @@ pub async fn FetchFileContent(downloadUrl: &str) -> Result<String, ApiError> {
         .await
         .map_err(ApiError::ReqwestError)?;
 
-    if unsafe { crate::main::VERBOSE } {
+    if unsafe { crate::VERBOSE } {
         eprintln!("File Content Response Status: {}", response.status());
     }
 

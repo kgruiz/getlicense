@@ -8,13 +8,13 @@ pub async fn DisplayLicenseInfo(
 ) -> Result<(), AppError> {
     let spdxIdLower = spdxIdStr.to_lowercase();
 
-    if unsafe { crate::main::VERBOSE } {
+    if unsafe { crate::VERBOSE } {
         eprintln!("[Action] Displaying info for license: {}", spdxIdLower);
     }
 
     match cache.licenses.get(&spdxIdLower) {
         Some(licenseEntry) => {
-            let fieldsDataContent: Option<FieldsDataContent> = cache.dataFiles
+            let fieldsDataContent: Option<FieldsDataContent> = cache.dataFiles // dataFiles is correct
                 .get(crate::constants::FIELDS_YML_KEY)
                 .and_then(|entry| serde_yaml::from_value(entry.content.clone()).ok());
 
@@ -23,7 +23,6 @@ pub async fn DisplayLicenseInfo(
             Ok(())
         }
         None =>
-
             Err(AppError::ActionErrorVariant(ActionError::LicenseNotFound(spdxIdLower)))
     }
 }
@@ -34,13 +33,13 @@ pub async fn ShowPlaceholdersForLicense(
 ) -> Result<(), AppError> {
     let spdxIdLower = spdxIdStr.to_lowercase();
 
-    if unsafe { crate::main::VERBOSE } {
+    if unsafe { crate::VERBOSE } {
         eprintln!("[Action] Showing placeholders for license: {}", spdxIdLower);
     }
 
     match cache.licenses.get(&spdxIdLower) {
         Some(licenseEntry) => {
-            let fieldsDataContent: Option<FieldsDataContent> = cache.dataFiles
+            let fieldsDataContent: Option<FieldsDataContent> = cache.dataFiles // dataFiles is correct
                 .get(crate::constants::FIELDS_YML_KEY)
                 .and_then(|entry| serde_yaml::from_value(entry.content.clone()).ok());
 
@@ -52,7 +51,6 @@ pub async fn ShowPlaceholdersForLicense(
             Ok(())
         }
         None =>
-
             Err(AppError::ActionErrorVariant(ActionError::LicenseNotFound(spdxIdLower)))
     }
 }
