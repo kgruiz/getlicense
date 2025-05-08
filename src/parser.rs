@@ -175,7 +175,7 @@ pub fn BuildInfoComponents(
         howToApplyText: fm.how.clone(),
         noteText: fm.note.clone(),
         usingInfo: fm.using.clone(),
-        parsed_rules: ParsedRules {
+        parsedRules: ParsedRules {
             permissions: BuildParsedRulesCategory(&fm.permissions, "permissions", allRulesData),
             conditions: BuildParsedRulesCategory(&fm.conditions, "conditions", allRulesData),
             limitations: BuildParsedRulesCategory(&fm.limitations, "limitations", allRulesData),

@@ -70,10 +70,10 @@ async fn main() -> Result<(), AppError> {
             actions::list::DetailedListLicenses(&cache_data, args.licenseIds).await?;
         }
         Some(Commands::Info(args)) => {
-            actions::info::DisplayLicenseInfo(&cache_data, &args.licenseId).await?;
+            actions::info::DisplayLicenseInfo(&cache_data, &args.licenseId, &cli_args).await?;
         }
         Some(Commands::ShowPlaceholders(args)) => {
-            actions::info::ShowPlaceholdersForLicense(&cache_data, &args.licenseId).await?;
+            actions::info::ShowPlaceholdersForLicense(&cache_data, &args.licenseId, &cli_args).await?;
         }
         Some(Commands::Compare(args)) => {
             actions::compare::CompareLicenses(&cache_data, args.licenseIds).await?;
@@ -81,11 +81,11 @@ async fn main() -> Result<(), AppError> {
         Some(Commands::Find(args)) => {
             actions::find::FindMatchingLicenses(&cache_data, args.require, args.disallow).await?;
         }
-        Some(Commands::License(args)) => {
+        Some(Commands::License(ref args)) => {
             // The fill action might modify the cache (user_placeholders)
             let modified_placeholder_cache = actions::fill::FillLicenseTemplateAction(
                 &mut cache_data,
-                &args,
+                args,
                 &cli_args,
             )
             .await?;

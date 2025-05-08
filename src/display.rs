@@ -1,10 +1,11 @@
 use std::path::Path;
-use textwrap::{wrap, Options as TextWrapOptions};
 use std::collections::HashMap;
 use colored::*;
+use unicode_ellipsis::truncate_str;
 
 use crate::models::{Cache, LicenseEntry, RulesDataContent, FieldsDataContent};
 use crate::cli::Cli as FullCliArgs;
+use textwrap::{wrap, Options as TextWrapOptions}; // Keep this for actual wrapping
 use crate::constants::{
     KEY_RULES_FOR_COMPARISON_ARRAY, PLACEHOLDER_TO_ARG_MAP_TUPLES,
     RAW_PLACEHOLDER_TO_STANDARD_KEY_TUPLES, CLI_ARG_TO_CACHE_KEY_TUPLES
@@ -64,7 +65,7 @@ pub fn PrintDetailedLicenseList(
 
             if let Some(desc) = &license.description {
 
-                 let shortDesc = textwrap::truncate(desc, 100, "...");
+                 let shortDesc = truncate_str(desc, 100);
                  println!("{}: {}", "Description".bold(), shortDesc);
 
             }
@@ -156,7 +157,7 @@ pub fn PrintLicenseInfoPanel(
                     colorFn(ruleDetail.label.bold()),
                     ruleDetail.tag.dimmed()
                 );
-                let shortDesc = textwrap::truncate(&ruleDetail.description, 80, "...");
+                let shortDesc = truncate_str(&ruleDetail.description, 80);
                 println!("    {}", shortDesc.italic().dimmed());
 
             }
