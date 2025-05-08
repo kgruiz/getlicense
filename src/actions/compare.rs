@@ -1,8 +1,6 @@
 use crate::models::{Cache, LicenseEntry, RulesDataContent};
 use crate::display;
 use crate::error::AppError;
-// For get_full_license_data_from_cache
-use crate::cache;
 
 pub async fn CompareLicenses(
     cache: &Cache,
@@ -14,7 +12,6 @@ pub async fn CompareLicenses(
     }
 
     let targetKeysLower: Vec<String> = match requestedIds {
-
         Some(ids) if !ids.is_empty() => ids
             .into_iter()
             .filter_map(|idStr| {
@@ -28,39 +25,35 @@ pub async fn CompareLicenses(
                     eprintln!("[Action] Warning: License '{}' for comparison not found. Skipping.", idStr);
                     None
                 }
-
             })
             .collect(),
-
         _ => {
-            // No IDs provided or empty list, so compare all
             let mut allKeys: Vec<String> = cache.licenses.keys().cloned().collect();
             allKeys.sort();
             allKeys
         }
-
     };
 
     if targetKeysLower.len() < 2 {
         println!("Need at least two licenses to compare. Found {} valid licenses from request (or in cache if all).", targetKeysLower.len());
 
         return Ok(());
-
     }
 
     let mut licensesToCompare: Vec<&LicenseEntry> = Vec::new();
 
     for key in &targetKeysLower {
+
         if let Some(entry) = cache.licenses.get(key) {
             licensesToCompare.push(entry);
         }
+
     }
 
     if licensesToCompare.len() < 2 {
-        println!("After fetching details, only {} licenses are available for comparison. Need at least two.", licensesToCompare.len());
+        println!("After filtering, only {} licenses are available for comparison. Need at least two.", licensesToCompare.len());
 
         return Ok(());
-
     }
 
     let rulesDataContent: Option<RulesDataContent> = cache.data_files
@@ -69,6 +62,5 @@ pub async fn CompareLicenses(
 
     display::print_comparison_table(&licensesToCompare, &rulesDataContent);
 
-    return Ok(());
-
+    Ok(())
 }

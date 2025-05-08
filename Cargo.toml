@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 authors = ["Kaden Gruizenga <kgruiz@umich.edu>"]
 description = "A CLI tool to fetch, manage, and fill open source license templates from choosealicense.com."
-license = "MIT OR Apache-2.0"
+license = "GPL-3.0-or-later"
 repository = "https://github.com/kgruiz/getlicense"
 readme = "README.md"
 keywords = ["license", "cli", "opensource", "github", "generator"]
@@ -23,20 +23,12 @@ chrono = { version = "0.4", features = ["serde"] }
 thiserror = "1"
 textwrap = "0.16"
 indicatif = "0.17"
-# colored = "2" # Optional: For basic terminal text coloring
-# termcolor = "1" # Optional: Another alternative for terminal coloring
-# termimad = "0.23" # Optional: For rendering Markdown in the terminal
-# comfy-table = "7" # Optional: For creating nice tables
+colored = "2"
 dirs = "5"
 
-# For HashMap constants
-# lazy_static = "1.4.0"
-# once_cell = "1.17.0"
-
-
 [dev-dependencies]
-# assert_cmd = "2"
-# predicates = "3"
+assert_cmd = "2"
+predicates = "3"
 
 [[bin]]
 name = "getlicense"

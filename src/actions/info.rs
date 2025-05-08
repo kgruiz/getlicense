@@ -1,7 +1,6 @@
-use crate::models::{Cache, FieldsDataContent};
+use crate::models::{Cache, FieldsDataContent, LicenseEntry};
 use crate::display;
 use crate::error::{AppError, ActionError};
-use crate::cache;
 
 pub async fn DisplayLicenseInfo(
     cache: &Cache,
@@ -10,33 +9,22 @@ pub async fn DisplayLicenseInfo(
     let spdxIdLower = spdxIdStr.to_lowercase();
 
     if unsafe { crate::main::VERBOSE } {
-
         eprintln!("[Action] Displaying info for license: {}", spdxIdLower);
-
     }
 
-
-    match cache::GetFullLicenseDataFromCache(spdxIdLower.as_str(), cache) {
-
-        Ok(Some(licenseEntry)) => {
+    match cache.licenses.get(&spdxIdLower) {
+        Some(licenseEntry) => {
             let fieldsDataContent: Option<FieldsDataContent> = cache.data_files
                 .get(crate::constants::FIELDS_YML_KEY)
                 .and_then(|entry| serde_yaml::from_value(entry.content.clone()).ok());
 
-            display::PrintLicenseInfoPanel(&licenseEntry, &fieldsDataContent);
+            display::print_license_info_panel(&licenseEntry, &fieldsDataContent);
 
             Ok(())
         }
-        Ok(None) => {
+        None =>
 
             Err(AppError::ActionError(ActionError::LicenseNotFound(spdxIdLower)))
-
-        }
-        Err(e) => {
-
-            Err(AppError::CacheError(e))
-
-        }
     }
 }
 
@@ -47,35 +35,24 @@ pub async fn ShowPlaceholdersForLicense(
     let spdxIdLower = spdxIdStr.to_lowercase();
 
     if unsafe { crate::main::VERBOSE } {
-
         eprintln!("[Action] Showing placeholders for license: {}", spdxIdLower);
-
     }
 
-
-    match cache::GetFullLicenseDataFromCache(spdxIdLower.as_str(), cache) {
-
-        Ok(Some(licenseEntry)) => {
+    match cache.licenses.get(&spdxIdLower) {
+        Some(licenseEntry) => {
             let fieldsDataContent: Option<FieldsDataContent> = cache.data_files
                 .get(crate::constants::FIELDS_YML_KEY)
                 .and_then(|entry| serde_yaml::from_value(entry.content.clone()).ok());
 
-            display::PrintPlaceholderList(
+            display::print_placeholder_list(
                 &licenseEntry,
                 &fieldsDataContent,
             );
 
             Ok(())
         }
-        Ok(None) => {
+        None =>
 
             Err(AppError::ActionError(ActionError::LicenseNotFound(spdxIdLower)))
-
-        }
-        Err(e) => {
-
-            Err(AppError::CacheError(e))
-
-        }
     }
 }
