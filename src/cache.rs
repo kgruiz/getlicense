@@ -114,7 +114,7 @@ pub async fn UpdateAndLoadLicenseCache(
                         eprintln!("[Cache] Fetching data file: {}", ghFileInfo.name);
                     }
 
-                    if let Some(url) = &ghFileInfo.download_url {
+                    if let Some(url) = &ghFileInfo.downloadUrl {
                         match crate::api::FetchFileContent(url).await {
                             Ok(content) => {
                                 match crate::parser::ParseDataFileToValue(&ghFileInfo.name, &content) {
@@ -180,7 +180,7 @@ pub async fn UpdateAndLoadLicenseCache(
                             eprintln!("[Cache] Fetching license file: {}", ghFileInfo.name);
                         }
 
-                        if let Some(url) = &ghFileInfo.download_url {
+                        if let Some(url) = &ghFileInfo.downloadUrl {
                             match crate::api::FetchFileContent(url).await {
                                 Ok(content) => {
                                     match crate::parser::ParseLicenseFile(&ghFileInfo.name, &content) {
