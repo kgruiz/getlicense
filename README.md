@@ -63,6 +63,14 @@ A command-line tool, written in Rust and licensed under the GPLv3, to fetch, dis
 cargo install getlicense
 ```
 
+### Quick Start
+
+Install directly from crates.io using `cargo install`. Ensure `$HOME/.cargo/bin` is on your `PATH` so `getlicense` is available in Zsh. To generate and enable Zsh completions in one step:
+
+```bash
+getlicense --generate-completion zsh > ~/.zsh/completion/_getlicense && fpath=(~/.zsh/completion $fpath) && autoload -Uz compinit && compinit
+```
+
 ## Usage
 
 For a full list of commands and options:
