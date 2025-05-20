@@ -28,7 +28,7 @@ REPO: str = "choosealicense.com"
 BRANCH: str = "gh-pages"
 LICENSES_PATH: str = "_licenses"
 DATA_PATH: str = "_data"
-CACHE_FILENAME: str = "license_cache.json"
+CACHE_FILENAME: str = "license_cache_rs.json"
 USER_PLACEHOLDERS_CACHE_KEY: str = "user_placeholders"
 
 
