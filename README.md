@@ -6,7 +6,7 @@ A command-line tool, written in Rust and licensed under the GPLv3, to fetch, dis
 
 * **License Discovery & Caching:**
   * Fetches license templates and metadata (`rules.yml`, `fields.yml`) from `choosealicense.com`.
-  * Maintains an efficient local JSON cache (`getlicense_cache.json`).
+  * Maintains an efficient local JSON cache (`license_cache_rs.json`).
   * Automatically updates cache based on remote file changes (Git SHAs).
   * Pre-parses and caches license details (placeholders, rules, descriptions) for faster operations.
 * **Listing & Comparison:**
