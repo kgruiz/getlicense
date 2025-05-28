@@ -117,9 +117,13 @@ async fn main() -> Result<(), AppError> {
     }
 
     if !action_was_handled && cli_args.generateCompletion.is_none() {
-        <Cli as clap::CommandFactory>::command().print_help().map_err(|e| AppError::Io(e, PathBuf::from("clap help")))?;
-        // Instead of exiting directly, return an error. The help message is printed above.
-        return Err(AppError::NoActionSpecified);
+        <Cli as clap::CommandFactory>::command()
+            .print_help()
+            .map_err(|e| AppError::Io(e, PathBuf::from("clap help")))?;
+        // Instead of exiting with an error code, print a newline after the help
+        // text and exit successfully.
+        println!();
+        return Ok(());
     }
 
     if cache_updated_by_fetch || unsafe { CACHE_MODIFIED_BY_ACTION } {
