@@ -48,27 +48,64 @@ A command-line tool, written in Rust and licensed under the GPLv3, to fetch, dis
     cargo build --release
     ```
 
-3. Copy the executable (`target/release/getlicense`) to a directory included in your system's `PATH`, for example:
-
-    ```bash
-    mkdir -p ~/.local/bin
-    cp target/release/getlicense ~/.local/bin/getlicense
-    # Ensure ~/.local/bin is in your PATH (modify your shell's configuration file accordingly)
-    # Example for Bash/Zsh: export PATH="$HOME/.local/bin:$PATH"
-    ```
-
 ### From Crates.io (Once Published)
 
 ```bash
 cargo install getlicense
 ```
 
-### Quick Start
+### Automated Setup
 
-Install directly from crates.io using `cargo install`. Ensure `$HOME/.cargo/bin` is on your `PATH` so `getlicense` is available in Zsh. To generate and enable Zsh completions in one step:
+After building the release binary:
 
 ```bash
-getlicense --generate-completion zsh > ~/.zsh/completion/_getlicense && fpath=(~/.zsh/completion $fpath) && autoload -Uz compinit && compinit
+./install.sh
+```
+
+This script installs the `getlicense` binary, sets up shell completion for your default shell, and updates your shell config.
+
+**Optional flags:**
+
+| Flag         | Description                                    |
+|--------------|------------------------------------------------|
+| `--shell`    | Specify shell (bash, zsh, fish, powershell, nushell, elvish, fig) |
+| `--force`    | Overwrite existing files without prompting     |
+| `--dry-run`  | Preview steps without making changes           |
+| `--reload`   | Prompt to reload your shell config after setup|
+| `--bin-dir`  | Override binary install path                   |
+| `--src-bin`  | Path to prebuilt binary                        |
+
+### Manual Setup
+
+Copy the binary to a directory in your `PATH`, generate completion, and update your shell config manually.
+
+**Zsh:**
+
+```bash
+mkdir -p ~/.local/bin
+cp target/release/getlicense ~/.local/bin/getlicense
+export PATH="$HOME/.local/bin:$PATH"
+
+mkdir -p ~/.zsh/completion
+getlicense --generate-completion zsh > ~/.zsh/completion/_getlicense
+
+# In ~/.zshrc, add:
+fpath=(~/.zsh/completion $fpath)
+autoload -Uz compinit && compinit
+```
+
+**Bash:**
+
+```bash
+mkdir -p ~/.local/bin
+cp target/release/getlicense ~/.local/bin/getlicense
+export PATH="$HOME/.local/bin:$PATH"
+
+mkdir -p ~/.bash_completion.d
+getlicense --generate-completion bash > ~/.bash_completion.d/getlicense
+
+# In ~/.bashrc, add:
+source ~/.bash_completion.d/getlicense
 ```
 
 ## Usage
