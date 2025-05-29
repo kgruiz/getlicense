@@ -126,7 +126,7 @@ async fn main() -> Result<(), AppError> {
             eprintln!("Saving cache changes to {:?}...", cache_file_path);
         }
 
-        cache::SaveCache(&cache_file_path, &cache_data).await?;
+        cache::SaveCache(&cache_file_path, &cache_data)?;
     } else {
         if VERBOSE.load(Ordering::SeqCst) {
             eprintln!("No changes to save to cache file.");
