@@ -133,6 +133,12 @@ pub async fn UpdateAndLoadLicenseCache(
                     if let Some(url) = &ghFileInfo.downloadUrl {
                         match crate::api::FetchFileContent(url).await {
                             Ok(content) => {
+                                if crate::VERBOSE.load(Ordering::SeqCst) {
+                                    eprintln!(
+                                        "[Cache] Successfully fetched data file: {}",
+                                        ghFileInfo.name
+                                    );
+                                }
                                 match crate::parser::ParseDataFileToValue(
                                     &ghFileInfo.name,
                                     &content,
@@ -146,6 +152,12 @@ pub async fn UpdateAndLoadLicenseCache(
                                             },
                                         );
                                         cacheUpdatedByFetch = true;
+                                        if crate::VERBOSE.load(Ordering::SeqCst) {
+                                            eprintln!(
+                                                "[Cache] Parsed and cached data file: {}",
+                                                ghFileInfo.name
+                                            );
+                                        }
                                     }
                                     Err(e) => eprintln!(
                                         "[Cache] Error parsing data file {}: {}",
@@ -160,6 +172,9 @@ pub async fn UpdateAndLoadLicenseCache(
                         }
                     }
                 } else if let Some(entry) = existingEntry {
+                    if crate::VERBOSE.load(Ordering::SeqCst) {
+                        eprintln!("[Cache] Using cached data file: {}", ghFileInfo.name);
+                    }
                     newDataFilesCache.insert(cacheKey.clone(), entry.clone());
                 }
             }
@@ -217,6 +232,9 @@ pub async fn UpdateAndLoadLicenseCache(
                         if let Some(url) = &ghFileInfo.downloadUrl {
                             match crate::api::FetchFileContent(url).await {
                                 Ok(content) => {
+                                    if crate::VERBOSE.load(Ordering::SeqCst) {
+                                        eprintln!("[Cache] Successfully fetched license file: {}", ghFileInfo.name);
+                                    }
                                     match crate::parser::ParseLicenseFile(
                                         &ghFileInfo.name,
                                         &content,
@@ -245,6 +263,12 @@ pub async fn UpdateAndLoadLicenseCache(
                                             newLicensesCache
                                                 .insert(spdxId.to_lowercase(), licenseEntry);
                                             cacheUpdatedByFetch = true;
+                                            if crate::VERBOSE.load(Ordering::SeqCst) {
+                                                eprintln!(
+                                                    "[Cache] Parsed and cached license file: {} (SPDX: {})",
+                                                    ghFileInfo.name, spdxId
+                                                );
+                                            }
                                         }
                                         Err(e) => eprintln!(
                                             "[Cache] Error parsing license file {}: {}",
@@ -260,6 +284,9 @@ pub async fn UpdateAndLoadLicenseCache(
                         }
                     } else if let Some(key) = existingEntryKey {
                         if let Some(entry) = currentCache.licenses.get(&key) {
+                            if crate::VERBOSE.load(Ordering::SeqCst) {
+                                eprintln!("[Cache] Using cached license file: {}", ghFileInfo.name);
+                            }
                             newLicensesCache.insert(entry.spdxId.to_lowercase(), entry.clone());
                         }
                     }
@@ -282,6 +309,15 @@ pub async fn UpdateAndLoadLicenseCache(
     currentCache.licenses = newLicensesCache;
     currentCache.dataFiles = newDataFilesCache;
     currentCache.userPlaceholders = userPlaceholdersBackup;
+
+    if crate::VERBOSE.load(Ordering::SeqCst) {
+        eprintln!(
+            "[Cache] Cache now has {} licenses and {} data files (updated_by_fetch={})",
+            currentCache.licenses.len(),
+            currentCache.dataFiles.len(),
+            cacheUpdatedByFetch
+        );
+    }
 
     if currentCache.licenses.is_empty() && currentCache.dataFiles.is_empty() && !cacheUpdatedByFetch {
         eprintln!("Warning: cache is still empty. Check network access or parsing errors.");
