@@ -17,7 +17,7 @@ pub async fn DisplayLicenseInfo(cache: &Cache, spdxIdStr: &str) -> Result<(), Ap
                 .get(crate::constants::FIELDS_YML_KEY)
                 .and_then(|entry| serde_yaml::from_value(entry.content.clone()).ok());
 
-            display::PrintLicenseInfoPanel(&licenseEntry, &fieldsDataContent);
+            display::PrintLicenseInfoPanel(licenseEntry, &fieldsDataContent);
 
             Ok(())
         }
@@ -41,7 +41,7 @@ pub async fn ShowPlaceholdersForLicense(cache: &Cache, spdxIdStr: &str) -> Resul
                 .get(crate::constants::FIELDS_YML_KEY)
                 .and_then(|entry| serde_yaml::from_value(entry.content.clone()).ok());
 
-            display::PrintPlaceholderList(&licenseEntry, &fieldsDataContent);
+            display::PrintPlaceholderList(licenseEntry, &fieldsDataContent);
 
             Ok(())
         }
