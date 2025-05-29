@@ -127,8 +127,8 @@ pub async fn FillLicenseTemplateAction(
     // Pass the whole cache for access to fields.yml etc. for summary display
     // Pass all CLI args for context for the summary display
     display::DisplayLicenseSummaryAfterWrite(
-        &licenseEntry,
-        &cache,
+        licenseEntry,
+        cache,
         &outputPath,
         &userProvidedForFillingSummary,
         &cachedPlaceholdersAtStart,

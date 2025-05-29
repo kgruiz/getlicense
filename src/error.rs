@@ -21,8 +21,6 @@ pub enum AppError {
     #[error("I/O error for path '{1}': {0}")]
     Io(#[source] std::io::Error, PathBuf), // Or IoError if Io is a type name
 
-    #[error("No action specified by the user.")]
-    NoActionSpecified,
 }
 
 #[derive(Error, Debug)]
