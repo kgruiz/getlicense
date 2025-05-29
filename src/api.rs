@@ -2,16 +2,15 @@ use reqwest::header::{ACCEPT, AUTHORIZATION};
 use reqwest::Client;
 use serde::de::DeserializeOwned;
 use std::env;
+use std::sync::atomic::Ordering;
 
 use crate::error::ApiError;
 // For specific deserialization
+use crate::constants::{APP_USER_AGENT, GITHUB_API_BASE_URL, GITHUB_API_VERSION_HEADER};
 use crate::models::GitHubFile;
-use crate::constants::{GITHUB_API_BASE_URL, GITHUB_API_VERSION_HEADER, APP_USER_AGENT};
 
 fn GetHttpClient() -> Result<Client, reqwest::Error> {
-    Client::builder()
-        .user_agent(APP_USER_AGENT)
-        .build()
+    Client::builder().user_agent(APP_USER_AGENT).build()
 }
 
 async fn GetGithubApiGeneric<T: DeserializeOwned>(
@@ -21,13 +20,12 @@ async fn GetGithubApiGeneric<T: DeserializeOwned>(
     let token = env::var("GITHUB_TOKEN").ok();
     let url = format!("{}{}", GITHUB_API_BASE_URL, endpoint);
 
-    if unsafe { crate::VERBOSE } {
+    if crate::VERBOSE.load(Ordering::SeqCst) {
         eprintln!("API Request: GET {}", url);
 
         if token.is_some() {
             eprintln!("Using GITHUB_TOKEN.");
         }
-
     }
 
     let mut requestBuilder = client.get(&url).header(ACCEPT, GITHUB_API_VERSION_HEADER);
@@ -36,23 +34,35 @@ async fn GetGithubApiGeneric<T: DeserializeOwned>(
         requestBuilder = requestBuilder.header(AUTHORIZATION, format!("token {}", t));
     }
 
-    let response = requestBuilder.send().await.map_err(ApiError::ReqwestError)?;
+    let response = requestBuilder
+        .send()
+        .await
+        .map_err(ApiError::ReqwestError)?;
 
-    if unsafe { crate::VERBOSE } {
+    if crate::VERBOSE.load(Ordering::SeqCst) {
         eprintln!("API Response Status: {}", response.status());
     }
 
     if !response.status().is_success() {
         let status = response.status();
-        let errorText = response.text().await.unwrap_or_else(|_| "Failed to read error body".to_string());
+        let errorText = response
+            .text()
+            .await
+            .unwrap_or_else(|_| "Failed to read error body".to_string());
 
         if status == reqwest::StatusCode::FORBIDDEN && errorText.contains("rate limit exceeded") {
-             let rateLimitRemaining = env::var("X-RateLimit-Remaining").unwrap_or_else(|_| "N/A".to_string());
-             eprintln!("[API] Rate limit likely exceeded. Remaining: {}", rateLimitRemaining);
+            let rateLimitRemaining =
+                env::var("X-RateLimit-Remaining").unwrap_or_else(|_| "N/A".to_string());
+            eprintln!(
+                "[API] Rate limit likely exceeded. Remaining: {}",
+                rateLimitRemaining
+            );
         }
 
-        return Err(ApiError::HttpError { status, body: errorText });
-
+        return Err(ApiError::HttpError {
+            status,
+            body: errorText,
+        });
     }
 
     response.json::<T>().await.map_err(ApiError::ReqwestError)
@@ -68,13 +78,12 @@ pub async fn FetchGithubDirListing(
     let endpoint = format!("/repos/{}/{}/contents/{}?ref={}", owner, repo, path, branch);
 
     return GetGithubApiGeneric::<Vec<GitHubFile>>(&client, &endpoint).await;
-
 }
 
 pub async fn FetchFileContent(downloadUrl: &str) -> Result<String, ApiError> {
     let client = GetHttpClient().map_err(ApiError::ReqwestError)?;
 
-    if unsafe { crate::VERBOSE } {
+    if crate::VERBOSE.load(Ordering::SeqCst) {
         eprintln!("Fetching file content from: {}", downloadUrl);
     }
 
@@ -85,17 +94,18 @@ pub async fn FetchFileContent(downloadUrl: &str) -> Result<String, ApiError> {
         .await
         .map_err(ApiError::ReqwestError)?;
 
-    if unsafe { crate::VERBOSE } {
+    if crate::VERBOSE.load(Ordering::SeqCst) {
         eprintln!("File Content Response Status: {}", response.status());
     }
 
     if !response.status().is_success() {
-
         return Err(ApiError::HttpError {
             status: response.status(),
-            body: response.text().await.unwrap_or_else(|_| "Failed to read error body".to_string()),
+            body: response
+                .text()
+                .await
+                .unwrap_or_else(|_| "Failed to read error body".to_string()),
         });
-
     }
 
     response.text().await.map_err(ApiError::ReqwestError)
