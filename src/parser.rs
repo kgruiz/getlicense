@@ -1,22 +1,22 @@
 use regex::Regex;
 use serde::de::DeserializeOwned;
 use std::collections::{HashMap, HashSet};
+use std::sync::atomic::Ordering;
 
-use crate::models::{FrontMatter, InfoComponents, ParsedRules, RuleDetail, RulesDataContent, RuleSource};
-use crate::error::ParseError;
 use crate::constants::RAW_PLACEHOLDER_TO_STANDARD_KEY_TUPLES;
+use crate::error::ParseError;
+use crate::models::{
+    FrontMatter, InfoComponents, ParsedRules, RuleDetail, RuleSource, RulesDataContent,
+};
 
 fn SplitFrontMatterAndBody(fileContent: &str) -> (Option<String>, String) {
-
     if fileContent.starts_with("---") {
-
         if let Some(endFmIdx) = fileContent.get(3..).and_then(|s| s.find("---")) {
             let fmStr = fileContent[3..(3 + endFmIdx)].trim().to_string();
             let bodyStr = fileContent[(3 + endFmIdx + 3)..].trim().to_string();
 
             return (Some(fmStr), bodyStr);
         }
-
     }
 
     (None, fileContent.trim().to_string())
@@ -28,20 +28,15 @@ pub fn ParseLicenseFile(
 ) -> Result<(String, FrontMatter, String), ParseError> {
     let (fmStrOpt, body) = SplitFrontMatterAndBody(fileContent);
 
-    let mut frontMatter: FrontMatter =
-
-        if let Some(fmStr) = fmStrOpt {
-            serde_yaml::from_str(&fmStr).map_err(|e| ParseError::YamlError(filename.to_string(), e))?
+    let mut frontMatter: FrontMatter = if let Some(fmStr) = fmStrOpt {
+        serde_yaml::from_str(&fmStr).map_err(|e| ParseError::YamlError(filename.to_string(), e))?
+    } else {
+        if crate::VERBOSE.load(Ordering::SeqCst) {
+            eprintln!("[Parse] No YAML front matter found in {}", filename);
         }
 
-        else {
-
-            if unsafe { crate::VERBOSE } {
-                eprintln!("[Parse] No YAML front matter found in {}", filename);
-            }
-
-            FrontMatter::default()
-        };
+        FrontMatter::default()
+    };
 
     let spdxId = match frontMatter.spdxId.as_deref() {
         Some(id) if !id.trim().is_empty() => id.trim().to_string(),
@@ -49,7 +44,14 @@ pub fn ParseLicenseFile(
             .ok_or_else(|| ParseError::MissingSpdxId(filename.to_string()))?,
     };
 
-    if frontMatter.spdxId.is_none() || frontMatter.spdxId.as_deref().unwrap_or("").trim().is_empty() {
+    if frontMatter.spdxId.is_none()
+        || frontMatter
+            .spdxId
+            .as_deref()
+            .unwrap_or("")
+            .trim()
+            .is_empty()
+    {
         frontMatter.spdxId = Some(spdxId.clone());
     }
 
@@ -68,12 +70,12 @@ pub fn GuessSpdxFromFilename(filename: &str) -> Option<String> {
 
     if re.is_match(namePart) {
         Some(namePart.to_string())
-    }
-
-    else {
-
-        if unsafe { crate::VERBOSE } {
-            eprintln!("[Parse] Filename stem '{}' from '{}' does not look like an SPDX ID.", namePart, filename);
+    } else {
+        if crate::VERBOSE.load(Ordering::SeqCst) {
+            eprintln!(
+                "[Parse] Filename stem '{}' from '{}' does not look like an SPDX ID.",
+                namePart, filename
+            );
         }
 
         None
@@ -84,7 +86,6 @@ pub fn ParseDataFileToValue(
     filename: &str,
     fileContent: &str,
 ) -> Result<serde_yaml::Value, ParseError> {
-
     serde_yaml::from_str(fileContent).map_err(|e| ParseError::YamlError(filename.to_string(), e))
 }
 
@@ -93,7 +94,6 @@ pub fn _ParseDataFileToStruct<T: DeserializeOwned>(
     filename: &str,
     fileContent: &str,
 ) -> Result<T, ParseError> {
-
     serde_yaml::from_str(fileContent).map_err(|e| ParseError::YamlError(filename.to_string(), e))
 }
 
@@ -129,38 +129,31 @@ fn BuildParsedRulesCategory(
             sourceRulesList.iter().map(|r| (&r.tag, r)).collect();
 
         for tag in fmRuleTags {
-
             if let Some(ruleSource) = rulesMap.get(tag) {
                 parsedDetails.push(RuleDetail {
                     tag: ruleSource.tag.clone(),
                     label: ruleSource.label.clone(),
                     description: ruleSource.description.clone(),
                 });
-            }
-
-            else {
+            } else {
                 parsedDetails.push(RuleDetail {
                     tag: tag.clone(),
                     label: tag.clone(),
                     description: "Description not found in rules.yml.".to_string(),
                 });
             }
-
         }
 
         parsedDetails.sort_by(|a, b| a.label.cmp(&b.label));
-    }
-
-    else {
-
+    } else {
         for tag in fmRuleTags {
             parsedDetails.push(RuleDetail {
                 tag: tag.clone(),
                 label: tag.clone(),
-                description: "Rules data (rules.yml) not available for full description.".to_string(),
+                description: "Rules data (rules.yml) not available for full description."
+                    .to_string(),
             });
         }
-
     }
 
     parsedDetails
@@ -170,7 +163,6 @@ pub fn BuildInfoComponents(
     fm: &FrontMatter,
     allRulesData: &Option<RulesDataContent>,
 ) -> InfoComponents {
-
     InfoComponents {
         howToApplyText: fm.how.clone(),
         noteText: fm.note.clone(),
@@ -191,7 +183,10 @@ pub fn FillLicenseTemplateBody(
     placeholdersAsFoundInBody: &[String],
 ) -> String {
     let mut filledBody = templateBody.to_string();
-    let rawToStdMap: HashMap<&str, &str> = RAW_PLACEHOLDER_TO_STANDARD_KEY_TUPLES.iter().cloned().collect();
+    let rawToStdMap: HashMap<&str, &str> = RAW_PLACEHOLDER_TO_STANDARD_KEY_TUPLES
+        .iter()
+        .cloned()
+        .collect();
 
     for phInBodyWithBrackets in placeholdersAsFoundInBody {
         // ph_in_body_with_brackets is like "[year]" or "[name of copyright owner]"
@@ -201,20 +196,16 @@ pub fn FillLicenseTemplateBody(
         // Find the standard key for this placeholder
 
         if let Some(standardKey) = rawToStdMap.get(phTextNoBracketsLower.as_str()) {
-
             // Check if a replacement value is provided for this standard key
 
             if let Some(valueToInsert) = replacements.get(*standardKey) {
                 filledBody = filledBody.replace(phInBodyWithBrackets, valueToInsert);
             }
-
         }
-
     }
 
     filledBody
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -259,7 +250,7 @@ mod tests {
         let placeholdersInTemplate = vec![
             "[project]".to_string(),
             "[fullname]".to_string(),
-            "[year]".to_string()
+            "[year]".to_string(),
         ];
 
         let filled = FillLicenseTemplateBody(template, &replacements, &placeholdersInTemplate);
@@ -277,14 +268,14 @@ mod tests {
 
         let placeholdersInTemplate = vec![
             "[yyyy]".to_string(),
-            "[name of copyright owner]".to_string()
+            "[name of copyright owner]".to_string(),
         ];
 
         let filled = FillLicenseTemplateBody(template, &replacements, &placeholdersInTemplate);
         assert_eq!(filled, "Copyright 2023 by Acme Corp.");
     }
 
-     #[test]
+    #[test]
     fn TestFillLicenseTemplateBodyUnfilledPlaceholders() {
         let template = "Project: [project], Owner: [fullname], Contact: [email].";
         let mut replacements = HashMap::new();
@@ -294,11 +285,14 @@ mod tests {
         let placeholdersInTemplate = vec![
             "[project]".to_string(),
             "[fullname]".to_string(),
-            "[email]".to_string()
+            "[email]".to_string(),
         ];
 
         let filled = FillLicenseTemplateBody(template, &replacements, &placeholdersInTemplate);
         // Unfilled placeholders should remain as they are
-        assert_eq!(filled, "Project: RustApp, Owner: [fullname], Contact: [email].");
+        assert_eq!(
+            filled,
+            "Project: RustApp, Owner: [fullname], Contact: [email]."
+        );
     }
 }

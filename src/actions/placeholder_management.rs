@@ -1,19 +1,18 @@
-use colored::*;
-use crate::models::Cache;
 use crate::error::AppError;
+use crate::models::Cache;
+use colored::*;
+use std::sync::atomic::Ordering;
 
-pub async fn SetPlaceholder(
-    cache: &mut Cache,
-    key: &str,
-    value: &str,
-) -> Result<(), AppError> {
-
-    if unsafe { crate::VERBOSE } {
+pub async fn SetPlaceholder(cache: &mut Cache, key: &str, value: &str) -> Result<(), AppError> {
+    if crate::VERBOSE.load(Ordering::SeqCst) {
         eprintln!("[Action] Setting placeholder: {} = {}", key, value);
     }
 
-    cache.userPlaceholders.insert(key.to_string(), value.to_string());
-    println!("Placeholder '{}' set to '{}' in saved preferences.",
+    cache
+        .userPlaceholders
+        .insert(key.to_string(), value.to_string());
+    println!(
+        "Placeholder '{}' set to '{}' in saved preferences.",
         key.green(),
         value.cyan()
     );
@@ -21,15 +20,10 @@ pub async fn SetPlaceholder(
     Ok(())
 }
 
-pub async fn GetPlaceholder(
-    cache: &Cache,
-    keyOpt: Option<&str>,
-) -> Result<(), AppError> {
-
-    if unsafe { crate::VERBOSE } {
+pub async fn GetPlaceholder(cache: &Cache, keyOpt: Option<&str>) -> Result<(), AppError> {
+    if crate::VERBOSE.load(Ordering::SeqCst) {
         eprintln!("[Action] Getting placeholder(s). Key: {:?}", keyOpt);
     }
-
 
     if cache.userPlaceholders.is_empty() {
         println!("No saved placeholder preferences found.");
@@ -37,10 +31,8 @@ pub async fn GetPlaceholder(
         return Ok(());
     }
 
-
     match keyOpt {
         Some(key) => {
-
             if let Some(value) = cache.userPlaceholders.get(key) {
                 println!("{}: {}", key.green(), value.cyan());
             } else {
@@ -55,7 +47,7 @@ pub async fn GetPlaceholder(
         None => {
             println!("{}", "Saved Placeholder Preferences:".bold());
             let mut sortedPlaceholders: Vec<_> = cache.userPlaceholders.iter().collect();
-            sortedPlaceholders.sort_by_key(|(k,_)| *k);
+            sortedPlaceholders.sort_by_key(|(k, _)| *k);
 
             for (k, v) in sortedPlaceholders {
                 println!("  {}: {}", k.green(), v.cyan());
@@ -70,27 +62,24 @@ pub async fn ClearPlaceholders(
     cache: &mut Cache,
     keysOpt: Option<Vec<String>>,
 ) -> Result<(), AppError> {
-
-    if unsafe { crate::VERBOSE } {
+    if crate::VERBOSE.load(Ordering::SeqCst) {
         eprintln!("[Action] Clearing placeholder(s). Keys: {:?}", keysOpt);
     }
 
-
     match keysOpt {
         Some(keysToClear) if !keysToClear.is_empty() => {
-
             for key in keysToClear {
-
                 if cache.userPlaceholders.remove(&key).is_some() {
                     println!("Cleared saved preference for '{}'.", key.green());
                 } else {
-                    println!("No saved preference found for key '{}' to clear.", key.yellow());
+                    println!(
+                        "No saved preference found for key '{}' to clear.",
+                        key.yellow()
+                    );
                 }
             }
-
         }
         _ => {
-
             if cache.userPlaceholders.is_empty() {
                 println!("No saved placeholder preferences to clear.");
             } else {
