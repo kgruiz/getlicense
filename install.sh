@@ -68,23 +68,14 @@ case "$BIN_DIR" in "$HOME"/*) ;; *)
     ;;
 esac
 
-# build binary if missing
-if [ ! -x "$SRC_BIN" ]; then
-    if command -v cargo >/dev/null 2>&1; then
-        if [ $DRY_RUN -eq 1 ]; then
-            printf 'DRY RUN: cargo build --release\n'
-        else
-            printf 'Building getlicense...\n'
-            cargo build --release || {
-                printf 'Error: build failed\n' >&2
-                exit 1
-            }
-            printf 'Build complete\n'
-        fi
-    else
-        printf 'Error: %s missing and cargo not found\n' "$SRC_BIN" >&2
+# always rebuild
+if command -v cargo >/dev/null 2>&1; then
+    printf 'Building getlicense...\n'
+    cargo build --release || {
+        printf 'Error: build failed\n' >&2
         exit 1
-    fi
+    }
+    printf 'Build complete\n'
 fi
 
 # install binary
