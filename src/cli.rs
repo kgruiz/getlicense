@@ -1,14 +1,13 @@
-use clap::{Parser, Subcommand, Args as ClapArgs};
-use std::path::PathBuf;
 use clap::builder::TypedValueParser;
+use clap::{Args as ClapArgs, Parser, Subcommand, crate_version};
+use std::path::PathBuf;
 
 pub use clap_complete::Shell;
 
 use crate::constants::CACHABLE_PLACEHOLDER_KEYS_ARRAY;
 
-
 #[derive(Parser, Debug)]
-#[clap(name = "getlicense", version = "0.1.0-rust", author = "Kaden Gruizenga")]
+#[clap(name = "getlicense", version = crate_version!(), author = "Kaden Gruizenga")]
 #[clap(about = "Fetches, displays, and manages open source license templates.", long_about = None)]
 #[clap(propagate_version = true)]
 pub struct Cli {
@@ -28,7 +27,12 @@ pub struct Cli {
     pub verbose: bool,
 
     /// Generate shell completion script.
-    #[clap(long = "generate-completion", value_enum, global = true, help = "Generate shell completion script for the specified shell")]
+    #[clap(
+        long = "generate-completion",
+        value_enum,
+        global = true,
+        help = "Generate shell completion script for the specified shell"
+    )]
     pub generateCompletion: Option<Shell>,
 }
 
@@ -51,7 +55,10 @@ pub enum Commands {
     /// Fill a license template with user-provided values and save it.
     License(LicenseFillArgs),
     /// Save a placeholder value for future use.
-    #[clap(name = "set-placeholder", about = "Save a placeholder value. KEY must be one of: fullname, project, email, projecturl.")]
+    #[clap(
+        name = "set-placeholder",
+        about = "Save a placeholder value. KEY must be one of: fullname, project, email, projecturl."
+    )]
     SetPlaceholder(SetPlaceholderArgs),
     /// Show saved placeholder value(s). Shows all if no KEY.
     #[clap(name = "get-placeholder")]
