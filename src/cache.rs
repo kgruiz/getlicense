@@ -283,6 +283,10 @@ pub async fn UpdateAndLoadLicenseCache(
     currentCache.dataFiles = newDataFilesCache;
     currentCache.userPlaceholders = userPlaceholdersBackup;
 
+    if currentCache.licenses.is_empty() && currentCache.dataFiles.is_empty() && !cacheUpdatedByFetch {
+        eprintln!("Warning: cache is still empty. Check network access or parsing errors.");
+    }
+
     if !cacheUpdatedByFetch && !forceRefresh && crate::VERBOSE.load(Ordering::SeqCst) {
         eprintln!("[Cache] Cache is up-to-date regarding remote files.");
     }
