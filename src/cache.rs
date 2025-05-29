@@ -11,7 +11,7 @@ use crate::constants::{
 use crate::error::CacheError;
 use crate::models::{Cache, DataFileEntry, GitHubFile, LicenseEntry, RulesDataContent};
 
-pub async fn LoadCache(cachePath: &Path) -> Result<Cache, CacheError> {
+pub fn LoadCache(cachePath: &Path) -> Result<Cache, CacheError> {
     if !cachePath.exists() {
         // exists() is fine
         if crate::VERBOSE.load(Ordering::SeqCst) {
@@ -42,7 +42,7 @@ pub async fn LoadCache(cachePath: &Path) -> Result<Cache, CacheError> {
         .map_err(|e| CacheError::Deserialization(e, cachePath.to_path_buf()))
 }
 
-pub async fn SaveCache(cachePath: &Path, cacheData: &Cache) -> Result<(), CacheError> {
+pub fn SaveCache(cachePath: &Path, cacheData: &Cache) -> Result<(), CacheError> {
     if let Some(parent) = cachePath.parent() {
         fs::create_dir_all(parent).map_err(|e| CacheError::Io(e, parent.to_path_buf()))?;
     }
@@ -88,7 +88,7 @@ pub async fn UpdateAndLoadLicenseCache(
         }
         Cache::default()
     } else {
-        LoadCache(cachePath).await.unwrap_or_else(|err| {
+        LoadCache(cachePath).unwrap_or_else(|err| {
             if crate::VERBOSE.load(Ordering::SeqCst) {
                 eprintln!(
                     "[Cache] Warning: Failed to load cache ({:?}), starting fresh: {}",
@@ -102,7 +102,7 @@ pub async fn UpdateAndLoadLicenseCache(
     let userPlaceholdersBackup = if !forceRefresh {
         currentCache.userPlaceholders.clone()
     } else {
-        let diskCacheForPlaceholders = LoadCache(cachePath).await.unwrap_or_default();
+        let diskCacheForPlaceholders = LoadCache(cachePath).unwrap_or_default();
         diskCacheForPlaceholders.userPlaceholders
     };
 
